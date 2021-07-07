@@ -24702,6 +24702,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		return;
 
 	vector<PlayerTypes> vValidMinors;
+	int iLoop;
 	int iOurIncome = GetPlayer()->getAvgGoldRate();
 	int iEra = GetPlayer()->GetCurrentEra();
 	if (iEra <= 0)
@@ -24722,6 +24723,9 @@ void CvDiplomacyAI::DoContactMinorCivs()
 			continue;
 
 		if (!IsPlayerValid(eMinor, true))
+			continue;
+
+		if (!GET_PLAYER(eMinor).getCapitalCity())
 			continue;
 
 		vValidMinors.push_back(eMinor);
@@ -24770,12 +24774,194 @@ void CvDiplomacyAI::DoContactMinorCivs()
 	PlayerTypes eBullyTarget = GetCSBullyTargetPlayer();
 	PlayerTypes eBuyoutTarget = NO_PLAYER;
 	PlayerTypes eGoldGiftTarget = NO_PLAYER;
-	bool bWantsToBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates(); // Would we like to buyout a minor this turn?  (Venice / Austria UA)
+	bool bCanBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates(); // Would we like to buyout a minor this turn?  (Venice / Austria UA)
+
+	// Is there a minor we'd like to buy out?
+	if (bCanBuyout)
+	{
+		CvWeightedVector<PlayerTypes> veMinorsToBuyout;
+		for (std::vector<PlayerTypes>::iterator it = vValidMinors.begin(), it != vValidMinors.end(); it++)
+		{
+			CvPlayerAI* pMinor = GET_PLAYER(*it);
+			CvMinorCivAI* pMinorAI = pMinor->GetMinorCivAI();
+
+			if (GetCivApproach(*it) <= CIV_APPROACH_HOSTILE)
+				continue;
+
+			bool bAustria = GetPlayer()->IsDiplomaticMarriage() && pMinorAI->CanMajorDiploMarriage(GetID());
+			bool bVenice = GetPlayer()->IsAbleToAnnexCityStates() && pMinorAI->CanMajorBuyout(GetID());
+			if (!bAustria && !bVenice)
+				continue;
+
+			CvCity* pMinorCapital = pMinor->getCapitalCity();
+			CvCity* pOurClosestCity = GetPlayer()->GetClosestCityByPathLength(pMinorCapital->plot());
+			if (!pOurClosestCity)
+				continue;
+
+			// Distance is the primary factor to consider
+			int iDistance = plotDistance(*pCapitalCity->plot(), *pOurClosestCity->plot());
+			int iStartingWeight = 1000 - iDistance;
+			int iWeight = iStartingWeight;
+
+			// We want to steal away City-State allies from our enemies, if we can
+			PlayerTypes eAlly = pMinorAI->GetAlly();
+			if (eAlly == NO_PLAYER)
+			{
+				iWeight += 5;
+			}
+			else if (GET_PLAYER(eAlly).getTeam() == GetTeam())
+			{
+				if (!bAustria || IsTeammate(eAlly))
+					iWeight -= 15;
+			}
+			else
+			{
+				if (IsFriendOrAlly(eAlly))
+				{
+					iWeight -= 10;
+				}
+				if (GetBiggestCompetitor() == eAlly || GetPrimeLeagueCompetitor() == eAlly)
+				{
+					iWeight += 15;
+				}
+				else if (GetCivApproach(eAlly) < CIV_APPROACH_AFRAID)
+				{
+					iWeight += 10;
+				}
+			}
+
+			// Only Venice needs to consider anything further
+			if (bAustria)
+			{
+				veMinorsToBuyout.push_back(*it, iWeight);
+				continue;
+			}
+
+			// Can we afford to supply and pay for their units?
+			int iMinorUnits = 0;
+			int iMinorMilitaryUnits = 0;
+			for (CvUnit* pLoopUnit = pMinor->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = pMinor->nextUnit(&iLoop))
+			{
+				if (pLoopUnit->IsCanAttack() && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE_SEA)
+				{
+					iMinorMilitaryUnits++;
+				}
+				iMinorUnits++;
+			}
+
+			// If they're nearby and we're losing wars, we want to buy them out!
+			if (GetPlayer()->GetProximityToPlayer(*it) >= PLAYER_PROXIMITY_NEIGHBORS && GetStateAllWars() == STATE_ALL_WARS_LOSING)
+			{
+				iWeight += (iMinorMilitaryUnits) * 10;
+			}
+			else
+			{
+				int iFreeUnits = GetPlayer()->getHandicapInfo()->getGoldFreeUnits() + GetPlayer()->GetNumMaintenanceFreeUnits() + GetPlayer()->getBaseFreeUnits();
+				int iUnits = GetPlayer()->getNumUnits();
+				bool bGoldOK =  iFreeUnits > (iUnits + iMinorUnits) || iOurIncome > (2 * (iUnits + iMinorUnits - iFreeUnits));
+				bool bSupplyOK = GetPlayer()->GetNumUnitsSupplied() >= (iUnits + iMinorMilitaryUnits);
+				if (bGoldOK && bSupplyOK)
+				{
+					iWeight += (iMinorMilitaryUnits) * 5;
+				}
+				else
+				{
+					if (!bGoldOK)
+					{
+						int iDeficit = iOurIncome - (2 * (iUnits + iMinorUnits - iFreeUnits));
+						iWeight += iDeficit * 2;
+					}
+					if (!bSupplyOK)
+					{
+						int iDeficit = GetPlayer()->GetNumUnitsSupplied() - iUnits - iMinorMilitaryUnits;
+						iWeight += iDeficit * 5;
+					}
+				}
+			}
+
+			bool bExpandToOtherContinents = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_EXPAND_TO_OTHER_CONTINENTS"));
+
+			// Are we unhappy?
+			if (GetPlayer()->IsEmpireVeryUnhappy())
+				iWeight -= 200;
+			else if (GetPlayer()->IsEmpireUnhappy())
+				iWeight -= 50;
+
+			// Potential bonuses lost
+			MinorCivTraitTypes eTrait = pMinorCivAI->GetTrait();
+			if (eTrait == MINOR_CIV_TRAIT_CULTURED && IsGoingForCultureVictory())
+			{
+				iWeight += -70;
+			}
+			else if (eTrait == MINOR_CIV_TRAIT_MERCANTILE)
+			{
+				if (GetPlayer()->IsEmpireVeryUnhappy())
+					iWeight -= 200;
+				else if (GetPlayer()->IsEmpireUnhappy())
+					iWeight -= 100;
+			}
+
+			CvArea* pMinorArea = GC.getMap().getArea(pMinorCapital->getArea());
+			bool bPresenceInArea = false;
+			int iMajorCapitalsInArea = 0;
+			if (pMinorArea)
+			{
+				// Do we have a city here?
+				if (pMinorArea->getCitiesPerPlayer(GetID()) > 0)
+					bPresenceInArea = true;
+
+				// Does another major civ have their capital on the same landmass? (must be revealed)
+				for (int iMajorRivalLoop = 0; iMajorRivalLoop < MAX_MAJOR_CIVS; iMajorRivalLoop++)
+				{
+					PlayerTypes eMajorRivalLoop = (PlayerTypes) iMajorRivalLoop;
+
+					if (IsPlayerValid(eMajorRivalLoop) && !IsFriendOrAlly(eMajorRivalLoop))
+					{
+						CvCity* pCapital = GET_PLAYER(eMajorRivalLoop).getCapitalCity();
+						if (pCapital && pCapital->plot())
+						{
+							CvPlot* pPlot = pCapital->plot();
+							if (pPlot->isRevealed(GetTeam()))
+								iMajorCapitalsInArea++;
+						}
+					}
+				}
+
+				// Foreign continent
+				if (!bPresenceInArea)
+				{
+					// Military foothold to attack other majors
+					if (IsGoingForWorldConquest() && iMajorCapitalsInArea > 0)
+					{
+						iWeight += 250;
+					}
+					// Expansion interests
+					else if (bExpandToOtherContinents)
+					{
+						iWeight += 200;
+					}
+					else
+					{
+						iValue -= 80;
+					}
+				}
+			}
+
+			if (iWeight >= iStartingWeight)
+			{
+				veMinorsToBuyout.push_back(*it, iWeight);
+			}
+		}
+
+		veMinorsToBuyout.SortItems();
+		eBuyoutTarget = (PlayerTypes) veMinorsToBuyout.GetElement(0);
+	}
+
+
 
 	// Are we bullying someone?
 	if (eBullyTarget != NO_PLAYER && std::find(vValidMinors.begin(), vValidMinors.end(), eBullyTarget) != vValidMinors.end())
 	{
-		
 	}
 
 

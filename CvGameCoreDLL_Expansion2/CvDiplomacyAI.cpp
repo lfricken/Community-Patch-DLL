@@ -24822,11 +24822,11 @@ void CvDiplomacyAI::DoContactMinorCivs()
 				}
 				if (GetBiggestCompetitor() == eAlly || GetPrimeLeagueCompetitor() == eAlly)
 				{
-					iWeight += 15;
+					iWeight += 20;
 				}
 				else if (GetCivApproach(eAlly) < CIV_APPROACH_AFRAID)
 				{
-					iWeight += 10;
+					iWeight += 15;
 				}
 			}
 
@@ -24954,8 +24954,6 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		veMinorsToBuyout.SortItems();
 		eBuyoutTarget = (PlayerTypes) veMinorsToBuyout.GetElement(0);
 	}
-
-
 
 	// Are we bullying someone?
 	if (eBullyTarget != NO_PLAYER && std::find(vValidMinors.begin(), vValidMinors.end(), eBullyTarget) != vValidMinors.end())

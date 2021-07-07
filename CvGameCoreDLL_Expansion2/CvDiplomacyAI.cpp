@@ -24743,9 +24743,9 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		}
 
 		// Do we want to connect to this player?
-		if (eApproach == CIV_APPROACH_FRIENDLY && iOurIncome > min(20 * iEra,50))
+		if (eApproach == CIV_APPROACH_FRIENDLY && GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
 		{
-			if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+			if (IsWantToRouteConnectToMinor(eMinor) || (iOurIncome > min(20 * iEra,50)))
 			{
 				if (GET_PLAYER(eMinor).GetMinorCivAI()->IsAllies(GetID()))
 				{
@@ -24758,9 +24758,9 @@ void CvDiplomacyAI::DoContactMinorCivs()
 					continue;
 				}
 			}
-
-			SetWantToRouteConnectToMinor(eMinor, false);
 		}
+
+		SetWantToRouteConnectToMinor(eMinor, false);
 	}
 
 

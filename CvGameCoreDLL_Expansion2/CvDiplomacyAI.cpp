@@ -24695,31 +24695,75 @@ bool CvDiplomacyAI::DeclareWar(TeamTypes eTeam)
 // City-State Diplomacy
 // ************************************
 
-/// Any Minor Civs we want to chat with?
+/// Any Minor Civs we want to interact with? (Gold Gifts, Buyout, Bullying, Protection)
 void CvDiplomacyAI::DoContactMinorCivs()
 {
 	if (GC.getGame().isOption(GAMEOPTION_ALWAYS_WAR))
 		return;
 
-	// Protection code
-	if (eApproach == CIV_APPROACH_FRIENDLY || GET_PLAYER(eMinor).GetMinorCivAI()->GetAlly() == GetID())
+	vector<PlayerTypes> vValidMinors;
+	int iOurIncome = GetPlayer()->getAvgGoldRate();
+	int iEra = GetPlayer()->GetCurrentEra();
+	if (iEra <= 0)
+		iEra = 1;
+
+	// Loop through all (known) Minors
+	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
 	{
-		// We are protective, so do a PtP if we are able to and haven't already
-		if (GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorStartProtection(GetID()))
+		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
+		CivApproachTypes eApproach = GetCivApproach(eMinor);
+
+		if (!IsPlayerValid(eMinor, true))
+			continue;
+
+		// Can't do anything with minors we're at war with, besides make peace (which isn't done here, but in DoUpdatePeaceTreatyWillingness())
+		if (IsAtWar(eMinor))
+			continue;
+
+		vValidMinors.push_back(eMinor);
+
+		// Update our PtP status
+		if (eApproach == CIV_APPROACH_FRIENDLY || GET_PLAYER(eMinor).GetMinorCivAI()->GetAlly() == GetID())
 		{
-			GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, true);
-			DoMakePublicDeclaration(PUBLIC_DECLARATION_PROTECT_MINOR, eMinor, -1, eMinor);
+			// We are protective, so do a PtP if we are able to and haven't already
+			if (GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorStartProtection(GetID()))
+			{
+				GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, true);
+				DoMakePublicDeclaration(PUBLIC_DECLARATION_PROTECT_MINOR, eMinor, -1, eMinor);
+			}
+		}
+		else
+		{
+			// We are not protective, so revoke PtP if we can
+			if (GET_PLAYER(eMinor).GetMinorCivAI()->IsProtectedByMajor(GetID()) && GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorWithdrawProtection(GetID()))
+			{
+				GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, false);
+				DoMakePublicDeclaration(PUBLIC_DECLARATION_ABANDON_MINOR, eMinor, -1, eMinor);
+			}
+		}
+
+		// Do we want to connect to this player?
+		if (eApproach == CIV_APPROACH_FRIENDLY && iOurIncome > min(20 * iEra,50))
+		{
+			if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+			{
+				if (GET_PLAYER(eMinor).GetMinorCivAI()->IsAllies(GetID()))
+				{
+					SetWantToRouteConnectToMinor(eMinor, true);
+					continue;
+				}
+				else if (GET_PLAYER(eMinor).GetMinorCivAI()->IsActiveQuestForPlayer(GetID(), MINOR_CIV_QUEST_ROUTE))
+				{
+					SetWantToRouteConnectToMinor(eMinor, true);
+					continue;
+				}
+			}
+
+			SetWantToRouteConnectToMinor(eMinor, false);
 		}
 	}
-	else
-	{
-		// We are not protective, so revoke PtP if we can
-		if (GET_PLAYER(eMinor).GetMinorCivAI()->IsProtectedByMajor(GetID()) && GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorWithdrawProtection(GetID()))
-		{
-			GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, false);
-			DoMakePublicDeclaration(PUBLIC_DECLARATION_ABANDON_MINOR, eMinor, -1, eMinor);
-		}
-	}
+
+
 
 	// Initialize flavors
 	int iDiplomacyFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DIPLOMACY"));
@@ -24906,35 +24950,6 @@ void CvDiplomacyAI::DoContactMinorCivs()
 
 		if(IsPlayerValid(eMinor))
 		{
-			// Can't do anything with minors we're at war with, besides make peace (which isn't done here, but in DoMakePeaceWithMinors())
-			if(IsAtWar(eMinor))
-				continue;
-
-			CivApproachTypes eApproach = GetCivApproach(eMinor);
-
-			// Do we want to change our protection of this minor?
-			DoUpdateMinorCivProtection(eMinor, eApproach);
-
-			// Do we want to connect to this player?
-			int iEra = GetPlayer()->GetCurrentEra();
-			if (iEra <= 0)
-				iEra = 1;
-
-			if (eApproach == CIV_APPROACH_FRIENDLY && GetPlayer()->getAvgGoldRate() > min(20 * iEra,50))
-			{
-				if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-				{
-					if (pMinorCivAI->IsAllies(eID))
-					{
-						bWantsToConnect = true;
-					}
-					else if (pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_ROUTE))
-					{
-						bWantsToConnect = true;
-					}
-				}
-			}
-
 			// Calculate desirability to buyout this minor
 			if(bWantsToBuyout)
 			{
@@ -25495,10 +25510,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 					}
 				}
 			}
-
 		}
-
-		SetWantToRouteConnectToMinor(eMinor, bWantsToConnect);
 	}
 
 	int iGoldReserve = GetPlayer()->GetTreasury()->GetGold();

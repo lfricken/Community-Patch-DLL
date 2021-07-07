@@ -24902,7 +24902,6 @@ void CvDiplomacyAI::DoContactMinorCivs()
 			}
 
 			CvArea* pMinorArea = GC.getMap().getArea(pMinorCapital->getArea());
-			bool bPresenceInArea = false;
 			int iMajorCapitalsInArea = 0;
 			if (pMinorArea)
 			{

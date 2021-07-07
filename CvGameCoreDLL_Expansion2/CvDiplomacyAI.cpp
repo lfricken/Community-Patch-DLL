@@ -24714,11 +24714,14 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
 		CivApproachTypes eApproach = GetCivApproach(eMinor);
 
-		if (!IsPlayerValid(eMinor, true))
+		if (!GET_PLAYER(eMinor).isMinorCiv())
 			continue;
 
 		// Can't do anything with minors we're at war with, besides make peace (which isn't done here, but in DoUpdatePeaceTreatyWillingness())
 		if (IsAtWar(eMinor))
+			continue;
+
+		if (!IsPlayerValid(eMinor, true))
 			continue;
 
 		vValidMinors.push_back(eMinor);
@@ -24764,6 +24767,17 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		SetWantToRouteConnectToMinor(eMinor, false);
 	}
 
+	PlayerTypes eBullyTarget = GetCSBullyTargetPlayer();
+	PlayerTypes eBuyoutTarget = NO_PLAYER;
+	PlayerTypes eGoldGiftTarget = NO_PLAYER;
+	bool bWantsToBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates(); // Would we like to buyout a minor this turn?  (Venice / Austria UA)
+
+	// Are we bullying someone?
+	if (eBullyTarget != NO_PLAYER && std::find(vValidMinors.begin(), vValidMinors.end(), eBullyTarget) != vValidMinors.end())
+	{
+		
+	}
+
 
 
 	// Initialize flavors
@@ -24776,11 +24790,6 @@ void CvDiplomacyAI::DoContactMinorCivs()
 	bool bNeedHappinessCritical = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_NEED_HAPPINESS_CRITICAL"));
 	bool bLosingMoney = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_LOSING_MONEY"));
 
-	// **************************
-	// Would we like to buyout a minor this turn?  (Venice / Austria UA)
-	// **************************
-
-	bool bWantsToBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates();
 
 	// **************************
 	// Would we like to give a gold gift this turn?

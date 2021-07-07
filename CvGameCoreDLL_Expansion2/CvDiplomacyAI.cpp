@@ -24706,8 +24706,9 @@ void CvDiplomacyAI::DoContactMinorCivs()
 	int iEra = GetPlayer()->GetCurrentEra();
 	if (iEra <= 0)
 		iEra = 1;
+	bool bAllowRouteBuilding = iOurIncome > min(20 * iEra,50);
 
-	// Loop through all (known) Minors
+	// Loop through all (known) Minors and add the valid ones to a vector
 	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
 	{
 		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
@@ -24745,7 +24746,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 		// Do we want to connect to this player?
 		if (eApproach == CIV_APPROACH_FRIENDLY && GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
 		{
-			if (IsWantToRouteConnectToMinor(eMinor) || (iOurIncome > min(20 * iEra,50)))
+			if (bAllowRouteBuilding || IsWantToRouteConnectToMinor(eMinor))
 			{
 				if (GET_PLAYER(eMinor).GetMinorCivAI()->IsAllies(GetID()))
 				{

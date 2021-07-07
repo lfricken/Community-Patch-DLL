@@ -24891,7 +24891,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 			MinorCivTraitTypes eTrait = pMinorCivAI->GetTrait();
 			if (eTrait == MINOR_CIV_TRAIT_CULTURED && IsGoingForCultureVictory())
 			{
-				iWeight += -70;
+				iWeight += -50;
 			}
 			else if (eTrait == MINOR_CIV_TRAIT_MERCANTILE)
 			{
@@ -24940,7 +24940,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 					}
 					else
 					{
-						iValue -= 80;
+						iValue -= 50;
 					}
 				}
 			}

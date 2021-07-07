@@ -24907,8 +24907,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 			if (pMinorArea)
 			{
 				// Do we have a city here?
-				if (pMinorArea->getCitiesPerPlayer(GetID()) > 0)
-					bPresenceInArea = true;
+				bool bPresenceInArea = pMinorArea->getCitiesPerPlayer(GetID()) > 0;
 
 				// Does another major civ have their capital on the same landmass? (must be revealed)
 				for (int iMajorRivalLoop = 0; iMajorRivalLoop < MAX_MAJOR_CIVS; iMajorRivalLoop++)

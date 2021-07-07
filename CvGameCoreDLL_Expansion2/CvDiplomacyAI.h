@@ -1189,6 +1189,8 @@ public:
 	// City-State Diplomacy
 	// ************************************
 
+	void DoContactMinorCivs();
+
 	// ************************************
 	// Diplomatic Interactions
 	// ************************************
@@ -1279,12 +1281,7 @@ public:
 	void DoContactMajorCivs();
 	void DoContactPlayer(PlayerTypes ePlayer);
 
-	void DoContactMinorCivs();
-
 	// Possible contact options follow:
-
-	void DoUpdateMinorCivProtection(PlayerTypes eMinor, CivApproachTypes eApproach);
-
 	void DoCoopWarTimeStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement, int& iData1);
 	void DoCoopWarStatement(PlayerTypes ePlayer, DiploStatementTypes& eStatement, int& iData1);
 

@@ -24695,6 +24695,986 @@ bool CvDiplomacyAI::DeclareWar(TeamTypes eTeam)
 // City-State Diplomacy
 // ************************************
 
+/// Any Minor Civs we want to chat with?
+void CvDiplomacyAI::DoContactMinorCivs()
+{
+	if (GC.getGame().isOption(GAMEOPTION_ALWAYS_WAR))
+		return;
+
+	// Protection code
+	if (eApproach == CIV_APPROACH_FRIENDLY || GET_PLAYER(eMinor).GetMinorCivAI()->GetAlly() == GetID())
+	{
+		// We are protective, so do a PtP if we are able to and haven't already
+		if (GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorStartProtection(GetID()))
+		{
+			GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, true);
+			DoMakePublicDeclaration(PUBLIC_DECLARATION_PROTECT_MINOR, eMinor, -1, eMinor);
+		}
+	}
+	else
+	{
+		// We are not protective, so revoke PtP if we can
+		if (GET_PLAYER(eMinor).GetMinorCivAI()->IsProtectedByMajor(GetID()) && GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorWithdrawProtection(GetID()))
+		{
+			GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, false);
+			DoMakePublicDeclaration(PUBLIC_DECLARATION_ABANDON_MINOR, eMinor, -1, eMinor);
+		}
+	}
+
+	// Initialize flavors
+	int iDiplomacyFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DIPLOMACY"));
+	int iGoldFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
+	int iTileImprovementFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_TILE_IMPROVEMENT"));
+
+	bool bExpandToOtherContinents = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_EXPAND_TO_OTHER_CONTINENTS"));
+	bool bNeedHappiness = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_NEED_HAPPINESS"));
+	bool bNeedHappinessCritical = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_NEED_HAPPINESS_CRITICAL"));
+	bool bLosingMoney = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_LOSING_MONEY"));
+
+	// **************************
+	// Would we like to buyout a minor this turn?  (Venice / Austria UA)
+	// **************************
+
+	bool bWantsToBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates();
+
+	// **************************
+	// Would we like to give a gold gift this turn?
+	// **************************
+
+	bool bWantsToMakeGoldGift = false;
+
+	// If we're a highly diplomatic leader, then always look for an opportunity
+	if(iDiplomacyFlavor >= /*4*/ GC.getMC_ALWAYS_GIFT_DIPLO_THRESHOLD() ||
+	        IsGoingForDiploVictory() ||
+	        IsGoingForCultureVictory() ||
+	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT) ||
+	        IsHasActiveGoldQuest() ||
+	        m_pPlayer->calculateGoldRate() > 100) // if we are very wealthy always do this
+	{
+		bWantsToMakeGoldGift = true;
+	}
+	// Otherwise, do a random roll
+	else
+	{
+		int iThreshold = iDiplomacyFlavor;
+		int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iDiplomacyFlavor + m_pPlayer->getGlobalAverage(YIELD_CULTURE));
+
+		// Threshold will be 15 for a player (3 flavor * 5)
+		// Threshold will be 5 for non-diplomatic player (2 flavor * 5)
+
+		if(iRandRoll < iThreshold)
+			bWantsToMakeGoldGift = true;
+	}
+
+	// **************************
+	// Would we like to get a unit by bullying this turn?
+	// **************************
+
+	bool bWantsToBullyUnit = false;
+
+	// Would we like to get Heavy Tribute by bullying this turn?
+	// Loop through all (known) Minors
+	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
+	{
+		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
+
+		if (!GET_PLAYER(eMinor).isMinorCiv())
+			continue;
+
+		if (GetCivApproach(eMinor) > CIV_APPROACH_HOSTILE)
+			continue;
+
+		if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+		{
+			if (GET_PLAYER(eMinor).GetMinorCivAI()->CalculateBullyScore(GetID(), false) >= 50)
+			{
+				bWantsToBullyUnit = true;
+			}
+		}
+		else
+		{
+			if (GetPlayer()->GetEconomicAI()->GetWorkersToCitiesRatio() < 0.25 && GetPlayer()->GetEconomicAI()->GetImprovedToImprovablePlotsRatio() < 0.50)
+			{
+				bWantsToBullyUnit = true;
+			}
+			// Otherwise, do a random roll
+			else
+			{
+				int iThreshold = iTileImprovementFlavor; //antonjs: todo: XML
+				int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iTileImprovementFlavor + m_pPlayer->getGlobalAverage(YIELD_CULTURE));
+
+				if (iRandRoll < iThreshold)
+					bWantsToBullyUnit = true;
+			}
+		}
+	}
+
+	// **************************
+	// Would we like to get some gold by bullying this turn?
+	// **************************
+
+	bool bWantsToBullyGold = false;
+
+	if(iGoldFlavor >= 6 ||  //antonjs: todo: GC.getMC_ALWAYS_BULLY_GOLD_THRESHOLD()
+	        IsGoingForWorldConquest() ||
+	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_UNIT) ||
+	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_BUILDING) ||
+	        bLosingMoney ||
+	        m_pPlayer->calculateGoldRate() < 0) // if we are losing gold per turn
+	{
+		bWantsToBullyGold = true;
+	}
+	// Otherwise, do a random roll
+	else
+	{
+		int iThreshold = iGoldFlavor; //antonjs: todo: XML
+		int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iGoldFlavor+ m_pPlayer->getGlobalAverage(YIELD_CULTURE));
+
+		if(iRandRoll < iThreshold)
+			bWantsToBullyGold = true;
+	}
+
+	if(BULLY_DEBUGGING)
+	{
+		//bWantsToMakeGoldGift = false;
+		//bWantsToBullyGold = true;
+		//bWantsToBullyUnit = true;
+	}
+
+	CvWeightedVector<PlayerTypes> veMinorsToBuyout; // Austria UA
+	CvWeightedVector<MinorGoldGiftInfo> veMinorsToGiveGold;
+	CvWeightedVector<PlayerTypes> veMinorsToBullyGold;
+	CvWeightedVector<PlayerTypes> veMinorsToBullyUnit;
+
+	int iLargeGift = /*1000*/ GC.getMINOR_GOLD_GIFT_LARGE();
+	int iMediumGift = /*500*/ GC.getMINOR_GOLD_GIFT_MEDIUM();
+	int iSmallGift = /*250*/ GC.getMINOR_GOLD_GIFT_SMALL();
+
+	PlayerTypes eID = GetID();
+
+	int iGrowthFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes) GC.getInfoTypeForString("FLAVOR_GROWTH"));
+
+#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
+	if(MOD_BALANCE_CORE_AFRAID_ANNEX)
+	{
+		if (GetPlayer()->GetPlayerTraits()->IsBullyAnnex())
+		{
+			if(!GetPlayer()->IsEmpireUnhappy())
+			{
+				bWantsToBullyUnit = true;
+				bWantsToBullyGold = false;
+				bWantsToMakeGoldGift = false;
+			}
+		}
+		if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
+		{
+			if (!GetPlayer()->IsEmpireUnhappy())
+			{
+				bWantsToBullyUnit = true;
+				bWantsToBullyGold = true;
+				bWantsToMakeGoldGift = false;
+			}
+		}
+	}
+
+	if (GetPlayer()->IsCanBullyFriendlyCS())
+	{
+		bWantsToBullyUnit = true;
+		bWantsToBullyGold = true;
+		bWantsToMakeGoldGift = false;
+	}
+	else if (GetPlayer()->GetBullyGlobalCSReduction())
+	{
+		bWantsToBullyUnit = true;
+		bWantsToBullyGold = true;
+		bWantsToMakeGoldGift = false;
+	}
+#endif
+	// Loop through all (known) Minors
+	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
+	{
+		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
+
+		CvPlayer* pMinor = &GET_PLAYER(eMinor);
+		CvMinorCivAI* pMinorCivAI = pMinor->GetMinorCivAI();
+
+		bool bWantsToConnect = false;
+		bool bWantsToGiveGoldToThisMinor = false;
+		bool bWantsToBullyUnitFromThisMinor = false;
+		bool bWantsToBullyGoldFromThisMinor = false;
+		bool bWantsToBuyoutThisMinor = false;
+
+		if(IsPlayerValid(eMinor))
+		{
+			// Can't do anything with minors we're at war with, besides make peace (which isn't done here, but in DoMakePeaceWithMinors())
+			if(IsAtWar(eMinor))
+				continue;
+
+			CivApproachTypes eApproach = GetCivApproach(eMinor);
+
+			// Do we want to change our protection of this minor?
+			DoUpdateMinorCivProtection(eMinor, eApproach);
+
+			// Do we want to connect to this player?
+			int iEra = GetPlayer()->GetCurrentEra();
+			if (iEra <= 0)
+				iEra = 1;
+
+			if (eApproach == CIV_APPROACH_FRIENDLY && GetPlayer()->getAvgGoldRate() > min(20 * iEra,50))
+			{
+				if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+				{
+					if (pMinorCivAI->IsAllies(eID))
+					{
+						bWantsToConnect = true;
+					}
+					else if (pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_ROUTE))
+					{
+						bWantsToConnect = true;
+					}
+				}
+			}
+
+			// Calculate desirability to buyout this minor
+			if(bWantsToBuyout)
+			{
+				int iValue = 100; //antonjs: todo: xml
+				// Only bother if we actually can buyout
+				CvCity* pMinorCapital = pMinor->getCapitalCity();
+				if(GetPlayer()->IsAbleToAnnexCityStates() && pMinorCivAI->CanMajorBuyout(eID) && pMinorCapital != NULL)
+				{
+					// Determine presence of player cities on this continent
+					int iMinorArea = pMinorCapital->getArea();
+					CvArea* pMinorArea = GC.getMap().getArea(iMinorArea);
+					bool bPresenceInArea = false;
+					int iMajorCapitalsInArea = 0;
+					if(pMinorArea)
+					{
+						// Do we have a city here?
+						if(pMinorArea->getCitiesPerPlayer(eID) > 0)
+							bPresenceInArea = true;
+
+						// Does another major civ have their capital here? (must be visible)
+						for(int iMajorRivalLoop = 0; iMajorRivalLoop < MAX_MAJOR_CIVS; iMajorRivalLoop++)
+						{
+							PlayerTypes eMajorRivalLoop = (PlayerTypes) iMajorRivalLoop;
+							if(eMajorRivalLoop == eID)
+								continue;
+
+							if(GET_PLAYER(eMajorRivalLoop).isAlive())
+							{
+								CvCity* pCapital = GET_PLAYER(eMajorRivalLoop).getCapitalCity();
+								if(pCapital && pCapital->plot())
+								{
+									CvPlot* pPlot = pCapital->plot();
+									if(pPlot->isVisible(GetTeam()))
+										iMajorCapitalsInArea++;
+								}
+							}
+						}
+					}
+					else
+					{
+						CvAssertMsg(false, "Could not lookup minor civ's area! Please send Anton your save file and version.");
+					}
+
+					// How many units does the city-state have?
+					int iMinorMilitaryUnits = 0;
+					int iMinorUnits = 0;
+					int iLoop;
+					for (CvUnit* pLoopUnit = pMinor->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = pMinor->nextUnit(&iLoop))
+					{
+						if(pLoopUnit->IsCanAttack() && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE_SEA)
+						{
+							iMinorMilitaryUnits++;
+						}
+						iMinorUnits++;
+					}
+
+					// Foreign continent
+					if(!bPresenceInArea)
+					{
+						// Military foothold to attack other majors
+						if(IsGoingForWorldConquest() && iMajorCapitalsInArea > 0)
+						{
+							iValue += 100; //antonjs: todo: xml
+						}
+						// Expansion
+						else if(bExpandToOtherContinents)
+						{
+							iValue += 60; //antonjs: todo: xml
+						}
+						else
+						{
+							iValue += -50; //antonjs: todo: xml
+						}
+					}
+					// Continent we have presence on
+					else
+					{
+						// Proximity plays a large factor, since we don't want a remote, isolated city
+						if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+						{
+							iValue += 100; //antonjs: todo: xml
+							// Military units could come to our rescue quickly
+							if(GetStateAllWars() == STATE_ALL_WARS_LOSING)
+							{
+								if(iMinorMilitaryUnits > 0)  //antonjs: todo: xml
+								{
+									iValue += (iMinorMilitaryUnits) * 10; //antonjs: todo: xml
+								}
+								else
+								{
+									iValue -= 50; //antonjs: todo: xml
+								}
+							}
+						}
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
+						{
+							iValue += 10; //antonjs: todo: xml
+						}
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
+						{
+							iValue += -50; //antonjs: todo: xml
+						}
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
+						{
+							iValue += -100; //antonjs: todo: xml
+						}
+					}
+
+					// Military units - How many, and can we support them?
+					if(GetPlayer()->GetNumUnitsSupplied() >= GetPlayer()->getNumUnits() + iMinorUnits)
+					{
+						iValue += (iMinorMilitaryUnits) * 5;
+					}
+
+					// Happiness
+					if(bNeedHappiness)
+						iValue += -50; //antonjs: todo: xml
+					if(bNeedHappinessCritical)
+						iValue += -150; //antonjs: todo: xml
+
+					// Potential bonuses lost
+					MinorCivTraitTypes eTrait = pMinorCivAI->GetTrait();
+					if(eTrait == MINOR_CIV_TRAIT_CULTURED && IsGoingForCultureVictory())
+					{
+						iValue += -70; //antonjs: todo: xml
+					}
+					else if(eTrait == MINOR_CIV_TRAIT_MERCANTILE)
+					{
+						if(bNeedHappiness)
+							iValue += -100; //antonjs: todo: xml
+						if(bNeedHappinessCritical)
+							iValue += -150; //antonjs: todo: xml
+					}
+
+					// Time to decide - Do we want it enough?
+					if(iValue > 100)  //antonjs: todo: xml
+					{
+						veMinorsToBuyout.push_back(eMinor, iValue);
+						bWantsToBuyoutThisMinor = true;
+					}
+				}
+#if defined(MOD_BALANCE_CORE)
+				// Only bother if we actually can buyout
+				if(GetPlayer()->IsDiplomaticMarriage() && pMinorCivAI->CanMajorDiploMarriage(eID))
+				{
+					veMinorsToBuyout.push_back(eMinor, 1000);
+						bWantsToBuyoutThisMinor = true;
+				}	
+#endif
+			}
+
+			// Calculate desirability to give this minor gold
+			if(bWantsToMakeGoldGift && !bWantsToBuyoutThisMinor)
+			{
+#if defined(MOD_DIPLOMACY_CITYSTATES)
+				if(MOD_DIPLOMACY_CITYSTATES && GET_PLAYER(eMinor).GetMinorCivAI()->IsNoAlly())
+				{
+					continue;
+				}
+				if(MOD_DIPLOMACY_CITYSTATES && GET_PLAYER(eMinor).GetMinorCivAI()->GetPermanentAlly() == GetID())
+				{
+					continue;
+				}
+#endif
+				int iValue = /*100*/ GC.getMC_GIFT_WEIGHT_THRESHOLD();
+				// If we're not protective, then don't bother with minor diplo
+				if(eApproach == CIV_APPROACH_FRIENDLY)
+				{
+					MinorGoldGiftInfo sGiftInfo;
+					sGiftInfo.eMinor = eMinor;
+					sGiftInfo.eMajorRival = NO_PLAYER;
+					sGiftInfo.bQuickBoost = false;
+					sGiftInfo.iGoldAmount = 0;
+
+					iValue += /*10*/ GC.getMC_GIFT_WEIGHT_PROTECTIVE(); // some base value
+
+					// if we are rich we are more likely to, conversely if we are poor...
+					iValue += min(max(0, m_pPlayer->calculateGoldRate() - 50),100);
+
+					CvMinorCivInfo* pMinorInfo = GC.getMinorCivInfo(pMinorCivAI->GetMinorCivType());
+
+					// Diplo victory makes us more likely to spend gold
+					if(IsGoingForDiploVictory())
+						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
+					// double up if this is the home stretch
+					if(GC.getGame().IsUnitedNationsActive())
+					{
+						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
+					}
+					// Going for Culture victory, focus on Cultural city states
+					else if(IsGoingForCultureVictory())
+					{
+						if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_CULTURED)
+							iValue += /*100*/ GC.getMC_GIFT_WEIGHT_CULTURE_VICTORY();
+					}
+					// Going for Conquest victory, focus on Militaristic city states
+					else if(IsGoingForWorldConquest())
+					{
+						if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MILITARISTIC)
+							iValue += /*100*/ GC.getMC_GIFT_WEIGHT_CONQUEST_VICTORY();
+					}
+
+					//antonjs: todo: work extra gold quest INF potential into the friends/allies/passing logic as well
+					// Gold gift quest is active, so we would get more bang for our bucks
+					if(pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_GIVE_GOLD))
+					{
+						iValue += 150; //antonjs: todo: constant/XML
+					}
+
+					// Invest quest is active, so we would get more bang for our bucks
+					if(pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_INVEST))
+					{
+						iValue += 100; //antonjs: todo: constant/XML
+					}
+
+					// having traits that give us bonuses also make us want to spend gold
+					if(m_pPlayer->GetPlayerTraits()->GetCityStateFriendshipModifier() > 0 || m_pPlayer->GetPlayerTraits()->GetCityStateBonusModifier())
+					{
+						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
+					}
+
+					// Nearly everyone likes to grow
+					if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MARITIME && !GetPlayer()->IsEmpireUnhappy())
+					{
+						iValue += /*20*/ GC.getMC_GIFT_WEIGHT_MARITIME_GROWTH() * iGrowthFlavor * max(1, GetPlayer()->getNumCities() / 3);
+					}
+
+					// Slight negative weight towards militaristic
+					if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MILITARISTIC && !IsGoingForWorldConquest())
+						iValue += /*-50*/ GC.getMC_GIFT_WEIGHT_MILITARISTIC();
+
+					// If they have a resource we don't have, add extra weight
+					int iResourcesWeLack = pMinorCivAI->GetNumResourcesMajorLacks(eID);
+					if(iResourcesWeLack > 0)
+						iValue += (iResourcesWeLack* /*80*/ GC.getMC_GIFT_WEIGHT_RESOURCE_WE_NEED());
+
+					// If the minor is hostile, then reduce the weighting
+					if(pMinorCivAI->GetPersonality() == MINOR_CIV_PERSONALITY_HOSTILE)
+						iValue += /*-20*/ GC.getMC_GIFT_WEIGHT_HOSTILE();
+
+					// The closer we are the better
+					if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+						iValue += /*5*/ GC.getMC_GIFT_WEIGHT_NEIGHBORS();
+					else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
+						iValue += /*4*/ GC.getMC_GIFT_WEIGHT_CLOSE();
+					else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
+						iValue += /*3*/ GC.getMC_GIFT_WEIGHT_FAR();
+
+					int iMediumGiftFriendship = pMinorCivAI->GetFriendshipFromGoldGift(eID, iMediumGift);
+					int iSmallGiftFriendship = pMinorCivAI->GetFriendshipFromGoldGift(eID, iSmallGift);
+
+					int iFriendshipWithMinor = pMinorCivAI->GetEffectiveFriendshipWithMajor(eID);
+
+					// Only care if we'll actually be Allies or better
+					bool bMediumGiftAllies = iFriendshipWithMinor + iMediumGiftFriendship >= pMinorCivAI->GetAlliesThreshold(eID);
+					bool bSmallGiftAllies = iFriendshipWithMinor + iSmallGiftFriendship >= pMinorCivAI->GetAlliesThreshold(eID);
+
+					// Loop through other players to see if we can pass them
+					for(int iOtherMajorLoop = 0; iOtherMajorLoop < MAX_MAJOR_CIVS; iOtherMajorLoop++)
+					{
+						PlayerTypes eOtherMajor = (PlayerTypes) iOtherMajorLoop;
+
+						// Player must be alive
+						if(!GET_PLAYER(eOtherMajor).isAlive())
+							continue;
+
+						int iOtherPlayerFriendshipWithMinor = pMinorCivAI->GetEffectiveFriendshipWithMajor(eOtherMajor);
+
+						// Player must have friendship with this major
+						if(iOtherPlayerFriendshipWithMinor <= 0)
+							continue;
+
+						// They must have more friendship with this guy than us
+						if(iFriendshipWithMinor <= iOtherPlayerFriendshipWithMinor)
+							continue;
+
+						// If we can pass them with a small gift, great
+						if(bSmallGiftAllies && iOtherPlayerFriendshipWithMinor - iFriendshipWithMinor < iSmallGiftFriendship)
+						{
+							iValue += /*15*/ GC.getMC_SMALL_GIFT_WEIGHT_PASS_OTHER_PLAYER();
+							sGiftInfo.bQuickBoost = true;
+							sGiftInfo.eMajorRival = eOtherMajor;
+						}
+						// If a medium gift passes them up, that's good too
+						else if(bMediumGiftAllies && iOtherPlayerFriendshipWithMinor - iFriendshipWithMinor < iMediumGiftFriendship)
+						{
+							iValue += /*10*/ GC.getMC_GIFT_WEIGHT_PASS_OTHER_PLAYER();
+							sGiftInfo.eMajorRival = eOtherMajor;
+						}
+						// We're behind and we can't catch up right now, so zero-out the value
+						else
+							iValue = 0;
+					}
+
+					// Are we already allies?
+					if(pMinorCivAI->IsAllies(eID))
+					{
+						// Are we close to losing our status?
+						if(pMinorCivAI->IsCloseToNotBeingAllies(eID))
+						{
+							iValue += /*150*/ GC.getMC_GIFT_WEIGHT_ALMOST_NOT_ALLIES();
+							sGiftInfo.bQuickBoost = true;
+						}
+						// Not going to lose status, so not worth going after this guy
+						else
+							iValue = 0;
+					}
+					// Are we already Friends?
+					else if(pMinorCivAI->IsFriends(eID))
+					{
+						// Are we close to losing our status?
+						if(pMinorCivAI->IsCloseToNotBeingFriends(eID))
+						{
+							iValue += /*125*/ GC.getMC_GIFT_WEIGHT_ALMOST_NOT_FRIENDS();
+							sGiftInfo.bQuickBoost = true;
+						}
+						// Not going to lose status, so not worth going after this guy
+						else if(!IsGoingForDiploVictory() || !GC.getGame().IsUnitedNationsActive())
+							iValue = 0;
+					}
+
+					// Did we bully you recently?  If so, giving you gold now would be very odd.
+					if(pMinorCivAI->IsRecentlyBulliedByMajor(eID))
+					{
+						iValue -= 100; //antonjs: todo: constant/XML
+					}
+
+					//antonjs: consider: different behavior to CS that have been bullied by others, bullied by rival, etc.
+
+					// Do we want it enough?
+					if(iValue > GC.getMC_GIFT_WEIGHT_THRESHOLD())
+					{
+						veMinorsToGiveGold.push_back(sGiftInfo, iValue);
+						bWantsToGiveGoldToThisMinor = true;
+					}
+				}
+			}
+
+			// Calculate desirability to bully a unit from this minor
+			if (bWantsToBullyUnit && !bWantsToBuyoutThisMinor && !bWantsToGiveGoldToThisMinor)  //antonjs: todo: xml
+			{
+				int iValue = 100; //antonjs: todo: XML, bully threshold
+				if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+					iValue = pMinor->GetMinorCivAI()->CalculateBullyScore(eID, true);
+
+				if (iValue <= 0)
+					continue;
+
+				if(eApproach == CIV_APPROACH_HOSTILE)
+				{
+					// Only bother if we can successfully bully
+					if (pMinor->GetMinorCivAI()->CanMajorBullyUnit(eID, MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING ? iValue - 25 : 0))
+					{
+#if defined(MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+						if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+						{
+							int iGrowthFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GROWTH")) / 2;
+							int iScienceFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE")) / 2;
+							int iCultureFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE")) / 2;
+							int iFaithFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION")) / 2;
+							int iProductionFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_PRODUCTION")) / 2;
+
+							if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MILITARISTIC)
+							{
+								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_SCIENCE) * iScienceFlavor) / 5;
+							}
+							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MERCANTILE)
+							{
+								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_PRODUCTION) * iProductionFlavor) / 5;
+							}
+							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_CULTURED)
+							{
+								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_CULTURE) * iCultureFlavor) / 5;
+							}
+							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_RELIGIOUS)
+							{
+								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_FAITH) * iFaithFlavor) / 5;
+							}
+							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MARITIME)
+							{
+								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_FOOD) * iGrowthFlavor) / 5;
+							}
+							iValue += GC.getGame().getSmallFakeRandNum(GetBoldness(), eID+m_pPlayer->getGlobalAverage(YIELD_CULTURE));
+						}
+						else
+						{
+#endif
+						// The closer we are the better, because the unit travels less distance to get home
+						if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+							iValue += 25;
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
+							iValue += 15;
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
+							iValue += -15;
+						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
+							iValue += -25;
+						//antonjs: consider: knock it down if is there a chance the worker will get captured by a nearby rival
+#if defined(MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+						}
+#endif
+						//antonjs: consider: if military unit, it would be a good thing to get it near a rival or ongoing war
+
+						// If this minor has a PtP from someone, bullying it could have big consequences
+						if (!GetPlayer()->GetPlayerTraits()->IgnoreBullyPenalties())
+						{
+							if (pMinor->GetMinorCivAI()->IsProtectedByAnyMajor())
+							{
+								iValue += -20;
+								//antonjs: consider: scale based on which major is protecting it
+							}
+							else if (pMinor->GetMinorCivAI()->GetAlly() != NO_PLAYER)
+							{
+								iValue += -20;
+							}
+							else
+							{
+								iValue += 20;
+							}
+						}
+						else
+						{
+							iValue += 25;
+						}
+#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
+						//Do we get a bonus from this?
+						if(MOD_BALANCE_CORE_AFRAID_ANNEX)
+						{
+							if (GetPlayer()->GetPlayerTraits()->IsBullyAnnex())
+							{
+								if(!GetPlayer()->IsEmpireUnhappy())
+								{
+									iValue += 100;
+								}
+								else
+								{
+									iValue -= 50;
+								}
+							}
+						}
+#endif
+#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
+						//Do we get a bonus from this?
+						if (MOD_BALANCE_CORE_AFRAID_ANNEX)
+						{
+							if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
+							{
+								iValue += 25;
+							}
+						}
+						for (int iI = 0; iI < NUM_YIELD_TYPES; iI++)
+						{
+							YieldTypes eYield = (YieldTypes)iI;
+							if (eYield != NO_YIELD)
+							{
+								if (GetPlayer()->GetYieldFromMinorDemand(eYield) > 0)
+								{
+									iValue += 10;
+								}
+							}
+						}
+
+						iValue -= GetDiploBalance() * 2;
+#endif
+						//antonjs: consider: allies or friends with another major
+						//antonjs: consider: distance to other majors
+						// If we are getting a bonus, don't mess that up!
+						if(pMinor->GetMinorCivAI()->IsAllies(eID) || pMinor->GetMinorCivAI()->IsFriends(eID))
+						{
+							if (!GetPlayer()->IsCanBullyFriendlyCS())
+								iValue = 0;
+						}
+						// Do we want it enough?
+						if(iValue > 100)  //antonjs: todo: XML for threshold
+						{
+							veMinorsToBullyUnit.push_back(eMinor, iValue);
+							bWantsToBullyUnitFromThisMinor = true;
+						}
+					}
+				}
+			}
+
+			// Calculate desirability to bully gold from this minor
+			if(bWantsToBullyGold && !bWantsToBuyoutThisMinor && !bWantsToGiveGoldToThisMinor && !bWantsToBullyUnitFromThisMinor)
+			{
+				int iValue = 100; //antonjs: todo: XML, bully threshold
+				if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
+					iValue = pMinor->GetMinorCivAI()->CalculateBullyScore(eID, false);
+
+				if (iValue <= 0)
+					continue;
+
+				if(eApproach == CIV_APPROACH_HOSTILE)
+				{
+					// Only bother if we can successfully bully
+					if (pMinor->GetMinorCivAI()->CanMajorBullyGold(eID, MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING ? iValue - 25 : 0))
+					{
+						// The closer we are the better
+						// The closer we are the better, because the unit travels less distance to get home
+						if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
+							iValue += 25;
+						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
+							iValue += 15;
+						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
+							iValue += -15;
+						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
+							iValue += -25;
+
+						// We like to keep bullying the same minor
+						if(pMinor->GetMinorCivAI()->IsEverBulliedByMajor(eID))
+						{
+							iValue += 25;
+						}
+
+						// If we have not bullied this minor recently, but someone else has, it might be good to wait for an opportunity to gain a lot of INF
+						if(!pMinor->GetMinorCivAI()->IsRecentlyBulliedByMajor(eID) && pMinor->GetMinorCivAI()->IsRecentlyBulliedByAnyMajor())
+						{
+							iValue += -15;
+							//antonjs: consider: but if everyone near the minor has bullied it, then there is nobody to come to its rescue, so we can bully safely
+						}
+
+						// If this minor has a PtP from someone, bullying it could have big consequences
+						if(pMinor->GetMinorCivAI()->IsProtectedByAnyMajor())
+						{
+							iValue += -20;
+							//antonjs: consider: scale based on which major is protecting it
+						}
+						else
+						{
+							iValue += 20;
+						}
+						//antonjs: consider: allies or friends another major
+						//antonjs: consider: distance to other majors
+
+#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
+						//Do we get a bonus from this?
+						if (MOD_BALANCE_CORE_AFRAID_ANNEX)
+						{
+							if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
+							{
+								iValue += 25;
+							}
+						}
+#endif
+
+						// If we are getting a bonus, don't mess that up!
+						if(pMinor->GetMinorCivAI()->IsAllies(eID) || pMinor->GetMinorCivAI()->IsFriends(eID))
+						{
+							if (!GetPlayer()->IsCanBullyFriendlyCS())
+								iValue = 0;
+						}
+
+						// Do we want it enough?
+						if(iValue > 100)  //antonjs: todo: XML for threshold
+						{
+							veMinorsToBullyGold.push_back(eMinor, iValue);
+							bWantsToBullyGoldFromThisMinor = true;
+						}
+					}
+				}
+			}
+
+		}
+
+		SetWantToRouteConnectToMinor(eMinor, bWantsToConnect);
+	}
+
+	int iGoldReserve = GetPlayer()->GetTreasury()->GetGold();
+
+	// Do we want to buyout a minor?
+	if(veMinorsToBuyout.size() > 0)
+	{
+		veMinorsToBuyout.SortItems();
+		int iGoldLeft = GetPlayer()->GetTreasury()->GetGold();
+		PlayerTypes eLoopMinor = NO_PLAYER;
+		for(int i = 0; i < veMinorsToBuyout.size(); i++)
+		{
+			eLoopMinor = veMinorsToBuyout.GetElement(i);
+			int iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetBuyoutCost(eID);
+			if(iGoldLeft >= iBuyoutCost)
+			{
+				if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBuyout(eID))
+				{
+					GC.getGame().DoMinorBuyout(eID, eLoopMinor);
+					iGoldLeft -= iBuyoutCost;
+					break; // Don't buyout more than once in a single turn
+				}
+				else
+				{
+					CvAssertMsg(false, "Chose a minor to buyout that cannot actually be bought! Please send Anton your save file and version.");
+				}
+			}
+			else
+			{
+				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
+				{
+					LogMinorCivBuyout(eLoopMinor, iBuyoutCost, /*bSaving*/ true);
+
+					int iPriority = GC.getAI_GOLD_PRIORITY_BUYOUT_CITY_STATE();
+					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iBuyoutCost, iPriority);
+				}
+			}
+#if defined(MOD_BALANCE_CORE)
+			iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetMarriageCost(eID);
+			if(iGoldLeft >= iBuyoutCost)
+			{
+				if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorDiploMarriage(eID))
+				{
+					GET_PLAYER(eLoopMinor).GetMinorCivAI()->DoMarriage(eID);
+					iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetMarriageCost(eID);
+					iGoldLeft -= iBuyoutCost;
+				}
+				else
+				{
+					CvAssertMsg(false, "Chose a minor to buyout that cannot actually be bought! Please send Anton your save file and version.");
+				}
+			}
+			else
+			{
+				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
+				{
+					LogMinorCivBuyout(eLoopMinor, iBuyoutCost, /*bSaving*/ true);
+
+					int iPriority = GC.getAI_GOLD_PRIORITY_BUYOUT_CITY_STATE();
+					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iBuyoutCost, iPriority);
+				}
+			}
+#endif
+		}
+	}
+
+	// Do we want to give someone Gold enough to actually do it?
+	if(veMinorsToGiveGold.size() > 0)
+	{
+		veMinorsToGiveGold.SortItems(); // Sort from highest desirability to lowest
+		for(int i = 0; i < veMinorsToGiveGold.size(); i++)
+		{
+			int iGoldLeft = GetPlayer()->GetTreasury()->GetGold();
+			MinorGoldGiftInfo sGift = veMinorsToGiveGold.GetElement(i);
+#if defined(MOD_BALANCE_CORE)
+			//Interception! Let's do a tile improvement if we can (and we'll benefit from it)
+			if (sGift.eMinor != NO_PLAYER && GET_PLAYER(sGift.eMinor).GetMinorCivAI()->IsFriends(GetID()))
+			{
+				CvPlot* pImprovementPlot = GET_PLAYER(sGift.eMinor).GetMinorCivAI()->GetMajorGiftTileImprovement(GetID());
+				if (pImprovementPlot != NULL)
+				{
+					GET_PLAYER(sGift.eMinor).GetMinorCivAI()->DoTileImprovementGiftFromMajor(GetID(), pImprovementPlot->getX(), pImprovementPlot->getY());
+					LogMinorCivGiftTile(sGift.eMinor);
+				}
+			}
+#endif
+#if defined(MOD_DIPLOMACY_CITYSTATES)
+			//Default is 1 - this will prevent the AI from trying to spam gold gifts of zero gold.
+			if (MOD_DIPLOMACY_CITYSTATES && GC.getCSD_GOLD_GIFT_DISABLED() > 0)
+			{
+				continue;
+			}
+#endif			
+			sGift.iGoldAmount = 0;
+
+			if(iGoldLeft >= iSmallGift && sGift.bQuickBoost)
+				sGift.iGoldAmount = iSmallGift;
+			else if(iGoldLeft >= iLargeGift)
+				sGift.iGoldAmount = iLargeGift;
+			else if(iGoldLeft >= iMediumGift)
+				sGift.iGoldAmount = iMediumGift;
+
+			int iOldFriendship = GET_PLAYER(sGift.eMinor).GetMinorCivAI()->GetEffectiveFriendshipWithMajor(eID);
+
+			// Able to give a gift?  Don't gift more than half of the gold we have in one turn
+			if(sGift.iGoldAmount > 0 && iGoldLeft >= (iGoldReserve / 2))
+			{
+				GET_PLAYER(sGift.eMinor).GetMinorCivAI()->DoGoldGiftFromMajor(GetID(), sGift.iGoldAmount); //antonjs: todo: go through CvGame instead?
+
+				LogMinorCivGiftGold(sGift.eMinor, iOldFriendship, sGift.iGoldAmount, /*bSaving*/ false, sGift.bQuickBoost, sGift.eMajorRival);
+
+				if(GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
+					GetPlayer()->GetEconomicAI()->CancelSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT);
+			}
+			// Can't afford gift yet, so start saving
+			else
+			{
+				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
+				{
+					int iAmountToSaveFor = iMediumGift;
+
+					if(sGift.bQuickBoost)
+						iAmountToSaveFor = iSmallGift;
+
+					LogMinorCivGiftGold(sGift.eMinor, iOldFriendship, iAmountToSaveFor, /*bSaving*/ true, sGift.bQuickBoost, sGift.eMajorRival);
+
+					int iPriority = GC.getAI_GOLD_PRIORITY_DIPLOMACY_BASE();
+					iPriority += GC.getAI_GOLD_PRIORITY_DIPLOMACY_PER_FLAVOR_POINT() * iDiplomacyFlavor;
+					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iAmountToSaveFor, iPriority);
+				}
+			}
+		}
+	}
+
+	// Do we want a unit enough to bully someone?
+	if(veMinorsToBullyUnit.size() > 0)
+	{
+		veMinorsToBullyUnit.SortItems();
+		PlayerTypes eLoopMinor = NO_PLAYER;
+		for(int i = 0; i < veMinorsToBullyUnit.size(); i++)
+		{
+			eLoopMinor = veMinorsToBullyUnit.GetElement(i);
+			CvAssertMsg(eLoopMinor != NO_PLAYER, "Trying to bully a unit from NO_PLAYER! Please send Anton your save file and version.");
+			if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBullyUnit(eID))
+			{
+				GC.getGame().DoMinorBullyUnit(eID, eLoopMinor);
+				break; // Don't bully a unit more than once in a single turn
+			}
+			else
+			{
+				CvAssertMsg(false, "Chose a minor to bully unit from that cannot actually be bullied! Please send Anton your save file and version.");
+			}
+		}
+	}
+
+	// Do we want gold enough to bully someone?
+	if(veMinorsToBullyGold.size() > 0)
+	{
+		veMinorsToBullyGold.SortItems();
+		PlayerTypes eLoopMinor = NO_PLAYER;
+		for(int i = 0; i < veMinorsToBullyGold.size(); i++)
+		{
+			eLoopMinor = veMinorsToBullyGold.GetElement(i);
+			CvAssertMsg(eLoopMinor != NO_PLAYER, "Trying to bully gold from NO_PLAYER! Please send Anton your save file and version.");
+			if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBullyGold(eID))
+			{
+				GC.getGame().DoMinorBullyGold(eID, eLoopMinor);
+			}
+			else
+			{
+				CvAssertMsg(false, "Chose a minor to bully gold from that cannot actually be bullied! Please send Anton your save file and version.");
+			}
+		}
+	}
+}
+
 
 //	-----------------------------------------------------------------------------------------------
 
@@ -29406,988 +30386,6 @@ void CvDiplomacyAI::DoContactPlayer(PlayerTypes ePlayer)
 			{
 				DoSendStatementToPlayer(ePlayer, eStatement, iData1, pDeal);
 				DoAddNewStatementToDiploLog(ePlayer, eStatement);
-			}
-		}
-	}
-}
-
-/// Any Minor Civs we want to chat with?
-void CvDiplomacyAI::DoContactMinorCivs()
-{
-	int iDiplomacyFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_DIPLOMACY"));
-	int iGoldFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GOLD"));
-	int iTileImprovementFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_TILE_IMPROVEMENT"));
-
-	bool bExpandToOtherContinents = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_EXPAND_TO_OTHER_CONTINENTS"));
-	bool bNeedHappiness = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_NEED_HAPPINESS"));
-	bool bNeedHappinessCritical = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_NEED_HAPPINESS_CRITICAL"));
-	bool bLosingMoney = GetPlayer()->GetEconomicAI()->IsUsingStrategy((EconomicAIStrategyTypes)GC.getInfoTypeForString("ECONOMICAISTRATEGY_LOSING_MONEY"));
-
-	// **************************
-	// Would we like to buyout a minor this turn?  (Venice / Austria UA)
-	// **************************
-
-	bool bWantsToBuyout = GetPlayer()->IsDiplomaticMarriage() || GetPlayer()->IsAbleToAnnexCityStates();
-
-	// **************************
-	// Would we like to give a gold gift this turn?
-	// **************************
-
-	bool bWantsToMakeGoldGift = false;
-
-	// If we're a highly diplomatic leader, then always look for an opportunity
-	if(iDiplomacyFlavor >= /*4*/ GC.getMC_ALWAYS_GIFT_DIPLO_THRESHOLD() ||
-	        IsGoingForDiploVictory() ||
-	        IsGoingForCultureVictory() ||
-	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT) ||
-	        IsHasActiveGoldQuest() ||
-	        m_pPlayer->calculateGoldRate() > 100) // if we are very wealthy always do this
-	{
-		bWantsToMakeGoldGift = true;
-	}
-	// Otherwise, do a random roll
-	else
-	{
-		int iThreshold = iDiplomacyFlavor;
-		int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iDiplomacyFlavor + m_pPlayer->getGlobalAverage(YIELD_CULTURE));
-
-		// Threshold will be 15 for a player (3 flavor * 5)
-		// Threshold will be 5 for non-diplomatic player (2 flavor * 5)
-
-		if(iRandRoll < iThreshold)
-			bWantsToMakeGoldGift = true;
-	}
-
-	// **************************
-	// Would we like to get a unit by bullying this turn?
-	// **************************
-
-	bool bWantsToBullyUnit = false;
-
-	// Would we like to get Heavy Tribute by bullying this turn?
-	// Loop through all (known) Minors
-	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
-	{
-		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
-
-		if (!GET_PLAYER(eMinor).isMinorCiv())
-			continue;
-
-		if (GetCivApproach(eMinor) > CIV_APPROACH_HOSTILE)
-			continue;
-
-		if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-		{
-			if (GET_PLAYER(eMinor).GetMinorCivAI()->CalculateBullyScore(GetID(), false) >= 50)
-			{
-				bWantsToBullyUnit = true;
-			}
-		}
-		else
-		{
-			if (GetPlayer()->GetEconomicAI()->GetWorkersToCitiesRatio() < 0.25 && GetPlayer()->GetEconomicAI()->GetImprovedToImprovablePlotsRatio() < 0.50)
-			{
-				bWantsToBullyUnit = true;
-			}
-			// Otherwise, do a random roll
-			else
-			{
-				int iThreshold = iTileImprovementFlavor; //antonjs: todo: XML
-				int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iTileImprovementFlavor + m_pPlayer->getGlobalAverage(YIELD_CULTURE));
-
-				if (iRandRoll < iThreshold)
-					bWantsToBullyUnit = true;
-			}
-		}
-	}
-
-	// **************************
-	// Would we like to get some gold by bullying this turn?
-	// **************************
-
-	bool bWantsToBullyGold = false;
-
-	if(iGoldFlavor >= 6 ||  //antonjs: todo: GC.getMC_ALWAYS_BULLY_GOLD_THRESHOLD()
-	        IsGoingForWorldConquest() ||
-	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_UNIT) ||
-	        GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_BUILDING) ||
-	        bLosingMoney ||
-	        m_pPlayer->calculateGoldRate() < 0) // if we are losing gold per turn
-	{
-		bWantsToBullyGold = true;
-	}
-	// Otherwise, do a random roll
-	else
-	{
-		int iThreshold = iGoldFlavor; //antonjs: todo: XML
-		int iRandRoll = GC.getGame().getSmallFakeRandNum(10, iGoldFlavor+ m_pPlayer->getGlobalAverage(YIELD_CULTURE));
-
-		if(iRandRoll < iThreshold)
-			bWantsToBullyGold = true;
-	}
-
-	if(BULLY_DEBUGGING)
-	{
-		//bWantsToMakeGoldGift = false;
-		//bWantsToBullyGold = true;
-		//bWantsToBullyUnit = true;
-	}
-
-	CvWeightedVector<PlayerTypes> veMinorsToBuyout; // Austria UA
-	CvWeightedVector<MinorGoldGiftInfo> veMinorsToGiveGold;
-	CvWeightedVector<PlayerTypes> veMinorsToBullyGold;
-	CvWeightedVector<PlayerTypes> veMinorsToBullyUnit;
-
-	int iLargeGift = /*1000*/ GC.getMINOR_GOLD_GIFT_LARGE();
-	int iMediumGift = /*500*/ GC.getMINOR_GOLD_GIFT_MEDIUM();
-	int iSmallGift = /*250*/ GC.getMINOR_GOLD_GIFT_SMALL();
-
-	PlayerTypes eID = GetID();
-
-	int iGrowthFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes) GC.getInfoTypeForString("FLAVOR_GROWTH"));
-
-#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
-	if(MOD_BALANCE_CORE_AFRAID_ANNEX)
-	{
-		if (GetPlayer()->GetPlayerTraits()->IsBullyAnnex())
-		{
-			if(!GetPlayer()->IsEmpireUnhappy())
-			{
-				bWantsToBullyUnit = true;
-				bWantsToBullyGold = false;
-				bWantsToMakeGoldGift = false;
-			}
-		}
-		if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
-		{
-			if (!GetPlayer()->IsEmpireUnhappy())
-			{
-				bWantsToBullyUnit = true;
-				bWantsToBullyGold = true;
-				bWantsToMakeGoldGift = false;
-			}
-		}
-	}
-
-	if (GetPlayer()->IsCanBullyFriendlyCS())
-	{
-		bWantsToBullyUnit = true;
-		bWantsToBullyGold = true;
-		bWantsToMakeGoldGift = false;
-	}
-	else if (GetPlayer()->GetBullyGlobalCSReduction())
-	{
-		bWantsToBullyUnit = true;
-		bWantsToBullyGold = true;
-		bWantsToMakeGoldGift = false;
-	}
-#endif
-	// Loop through all (known) Minors
-	for (int iMinorLoop = MAX_MAJOR_CIVS; iMinorLoop < MAX_CIV_PLAYERS; iMinorLoop++)
-	{
-		PlayerTypes eMinor = (PlayerTypes) iMinorLoop;
-
-		CvPlayer* pMinor = &GET_PLAYER(eMinor);
-		CvMinorCivAI* pMinorCivAI = pMinor->GetMinorCivAI();
-
-		bool bWantsToConnect = false;
-		bool bWantsToGiveGoldToThisMinor = false;
-		bool bWantsToBullyUnitFromThisMinor = false;
-		bool bWantsToBullyGoldFromThisMinor = false;
-		bool bWantsToBuyoutThisMinor = false;
-
-		if(IsPlayerValid(eMinor))
-		{
-			// Can't do anything with minors we're at war with, besides make peace (which isn't done here, but in DoMakePeaceWithMinors())
-			if(IsAtWar(eMinor))
-				continue;
-
-			CivApproachTypes eApproach = GetCivApproach(eMinor);
-
-			// Do we want to change our protection of this minor?
-			DoUpdateMinorCivProtection(eMinor, eApproach);
-
-			// Do we want to connect to this player?
-			int iEra = GetPlayer()->GetCurrentEra();
-			if (iEra <= 0)
-				iEra = 1;
-
-			if (eApproach == CIV_APPROACH_FRIENDLY && GetPlayer()->getAvgGoldRate() > min(20 * iEra,50))
-			{
-				if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-				{
-					if (pMinorCivAI->IsAllies(eID))
-					{
-						bWantsToConnect = true;
-					}
-					else if (pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_ROUTE))
-					{
-						bWantsToConnect = true;
-					}
-				}
-			}
-
-			// Calculate desirability to buyout this minor
-			if(bWantsToBuyout)
-			{
-				int iValue = 100; //antonjs: todo: xml
-				// Only bother if we actually can buyout
-				CvCity* pMinorCapital = pMinor->getCapitalCity();
-				if(GetPlayer()->IsAbleToAnnexCityStates() && pMinorCivAI->CanMajorBuyout(eID) && pMinorCapital != NULL)
-				{
-					// Determine presence of player cities on this continent
-					int iMinorArea = pMinorCapital->getArea();
-					CvArea* pMinorArea = GC.getMap().getArea(iMinorArea);
-					bool bPresenceInArea = false;
-					int iMajorCapitalsInArea = 0;
-					if(pMinorArea)
-					{
-						// Do we have a city here?
-						if(pMinorArea->getCitiesPerPlayer(eID) > 0)
-							bPresenceInArea = true;
-
-						// Does another major civ have their capital here? (must be visible)
-						for(int iMajorRivalLoop = 0; iMajorRivalLoop < MAX_MAJOR_CIVS; iMajorRivalLoop++)
-						{
-							PlayerTypes eMajorRivalLoop = (PlayerTypes) iMajorRivalLoop;
-							if(eMajorRivalLoop == eID)
-								continue;
-
-							if(GET_PLAYER(eMajorRivalLoop).isAlive())
-							{
-								CvCity* pCapital = GET_PLAYER(eMajorRivalLoop).getCapitalCity();
-								if(pCapital && pCapital->plot())
-								{
-									CvPlot* pPlot = pCapital->plot();
-									if(pPlot->isVisible(GetTeam()))
-										iMajorCapitalsInArea++;
-								}
-							}
-						}
-					}
-					else
-					{
-						CvAssertMsg(false, "Could not lookup minor civ's area! Please send Anton your save file and version.");
-					}
-
-					// How many units does the city-state have?
-					int iMinorMilitaryUnits = 0;
-					int iMinorUnits = 0;
-					int iLoop;
-					for (CvUnit* pLoopUnit = pMinor->firstUnit(&iLoop); pLoopUnit != NULL; pLoopUnit = pMinor->nextUnit(&iLoop))
-					{
-						if(pLoopUnit->IsCanAttack() && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE && pLoopUnit->AI_getUnitAIType() != UNITAI_EXPLORE_SEA)
-						{
-							iMinorMilitaryUnits++;
-						}
-						iMinorUnits++;
-					}
-
-					// Foreign continent
-					if(!bPresenceInArea)
-					{
-						// Military foothold to attack other majors
-						if(IsGoingForWorldConquest() && iMajorCapitalsInArea > 0)
-						{
-							iValue += 100; //antonjs: todo: xml
-						}
-						// Expansion
-						else if(bExpandToOtherContinents)
-						{
-							iValue += 60; //antonjs: todo: xml
-						}
-						else
-						{
-							iValue += -50; //antonjs: todo: xml
-						}
-					}
-					// Continent we have presence on
-					else
-					{
-						// Proximity plays a large factor, since we don't want a remote, isolated city
-						if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-						{
-							iValue += 100; //antonjs: todo: xml
-							// Military units could come to our rescue quickly
-							if(GetStateAllWars() == STATE_ALL_WARS_LOSING)
-							{
-								if(iMinorMilitaryUnits > 0)  //antonjs: todo: xml
-								{
-									iValue += (iMinorMilitaryUnits) * 10; //antonjs: todo: xml
-								}
-								else
-								{
-									iValue -= 50; //antonjs: todo: xml
-								}
-							}
-						}
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
-						{
-							iValue += 10; //antonjs: todo: xml
-						}
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
-						{
-							iValue += -50; //antonjs: todo: xml
-						}
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
-						{
-							iValue += -100; //antonjs: todo: xml
-						}
-					}
-
-					// Military units - How many, and can we support them?
-					if(GetPlayer()->GetNumUnitsSupplied() >= GetPlayer()->getNumUnits() + iMinorUnits)
-					{
-						iValue += (iMinorMilitaryUnits) * 5;
-					}
-
-					// Happiness
-					if(bNeedHappiness)
-						iValue += -50; //antonjs: todo: xml
-					if(bNeedHappinessCritical)
-						iValue += -150; //antonjs: todo: xml
-
-					// Potential bonuses lost
-					MinorCivTraitTypes eTrait = pMinorCivAI->GetTrait();
-					if(eTrait == MINOR_CIV_TRAIT_CULTURED && IsGoingForCultureVictory())
-					{
-						iValue += -70; //antonjs: todo: xml
-					}
-					else if(eTrait == MINOR_CIV_TRAIT_MERCANTILE)
-					{
-						if(bNeedHappiness)
-							iValue += -100; //antonjs: todo: xml
-						if(bNeedHappinessCritical)
-							iValue += -150; //antonjs: todo: xml
-					}
-
-					// Time to decide - Do we want it enough?
-					if(iValue > 100)  //antonjs: todo: xml
-					{
-						veMinorsToBuyout.push_back(eMinor, iValue);
-						bWantsToBuyoutThisMinor = true;
-					}
-				}
-#if defined(MOD_BALANCE_CORE)
-				// Only bother if we actually can buyout
-				if(GetPlayer()->IsDiplomaticMarriage() && pMinorCivAI->CanMajorDiploMarriage(eID))
-				{
-					veMinorsToBuyout.push_back(eMinor, 1000);
-						bWantsToBuyoutThisMinor = true;
-				}	
-#endif
-			}
-
-			// Calculate desirability to give this minor gold
-			if(bWantsToMakeGoldGift && !bWantsToBuyoutThisMinor)
-			{
-#if defined(MOD_DIPLOMACY_CITYSTATES)
-				if(MOD_DIPLOMACY_CITYSTATES && GET_PLAYER(eMinor).GetMinorCivAI()->IsNoAlly())
-				{
-					continue;
-				}
-				if(MOD_DIPLOMACY_CITYSTATES && GET_PLAYER(eMinor).GetMinorCivAI()->GetPermanentAlly() == GetID())
-				{
-					continue;
-				}
-#endif
-				int iValue = /*100*/ GC.getMC_GIFT_WEIGHT_THRESHOLD();
-				// If we're not protective, then don't bother with minor diplo
-				if(eApproach == CIV_APPROACH_FRIENDLY)
-				{
-					MinorGoldGiftInfo sGiftInfo;
-					sGiftInfo.eMinor = eMinor;
-					sGiftInfo.eMajorRival = NO_PLAYER;
-					sGiftInfo.bQuickBoost = false;
-					sGiftInfo.iGoldAmount = 0;
-
-					iValue += /*10*/ GC.getMC_GIFT_WEIGHT_PROTECTIVE(); // some base value
-
-					// if we are rich we are more likely to, conversely if we are poor...
-					iValue += min(max(0, m_pPlayer->calculateGoldRate() - 50),100);
-
-					CvMinorCivInfo* pMinorInfo = GC.getMinorCivInfo(pMinorCivAI->GetMinorCivType());
-
-					// Diplo victory makes us more likely to spend gold
-					if(IsGoingForDiploVictory())
-						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
-					// double up if this is the home stretch
-					if(GC.getGame().IsUnitedNationsActive())
-					{
-						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
-					}
-					// Going for Culture victory, focus on Cultural city states
-					else if(IsGoingForCultureVictory())
-					{
-						if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_CULTURED)
-							iValue += /*100*/ GC.getMC_GIFT_WEIGHT_CULTURE_VICTORY();
-					}
-					// Going for Conquest victory, focus on Militaristic city states
-					else if(IsGoingForWorldConquest())
-					{
-						if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MILITARISTIC)
-							iValue += /*100*/ GC.getMC_GIFT_WEIGHT_CONQUEST_VICTORY();
-					}
-
-					//antonjs: todo: work extra gold quest INF potential into the friends/allies/passing logic as well
-					// Gold gift quest is active, so we would get more bang for our bucks
-					if(pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_GIVE_GOLD))
-					{
-						iValue += 150; //antonjs: todo: constant/XML
-					}
-
-					// Invest quest is active, so we would get more bang for our bucks
-					if(pMinorCivAI->IsActiveQuestForPlayer(eID, MINOR_CIV_QUEST_INVEST))
-					{
-						iValue += 100; //antonjs: todo: constant/XML
-					}
-
-					// having traits that give us bonuses also make us want to spend gold
-					if(m_pPlayer->GetPlayerTraits()->GetCityStateFriendshipModifier() > 0 || m_pPlayer->GetPlayerTraits()->GetCityStateBonusModifier())
-					{
-						iValue += /*100*/ GC.getMC_GIFT_WEIGHT_DIPLO_VICTORY();
-					}
-
-					// Nearly everyone likes to grow
-					if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MARITIME && !GetPlayer()->IsEmpireUnhappy())
-					{
-						iValue += /*20*/ GC.getMC_GIFT_WEIGHT_MARITIME_GROWTH() * iGrowthFlavor * max(1, GetPlayer()->getNumCities() / 3);
-					}
-
-					// Slight negative weight towards militaristic
-					if(pMinorInfo->GetMinorCivTrait() == MINOR_CIV_TRAIT_MILITARISTIC && !IsGoingForWorldConquest())
-						iValue += /*-50*/ GC.getMC_GIFT_WEIGHT_MILITARISTIC();
-
-					// If they have a resource we don't have, add extra weight
-					int iResourcesWeLack = pMinorCivAI->GetNumResourcesMajorLacks(eID);
-					if(iResourcesWeLack > 0)
-						iValue += (iResourcesWeLack* /*80*/ GC.getMC_GIFT_WEIGHT_RESOURCE_WE_NEED());
-
-					// If the minor is hostile, then reduce the weighting
-					if(pMinorCivAI->GetPersonality() == MINOR_CIV_PERSONALITY_HOSTILE)
-						iValue += /*-20*/ GC.getMC_GIFT_WEIGHT_HOSTILE();
-
-					// The closer we are the better
-					if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-						iValue += /*5*/ GC.getMC_GIFT_WEIGHT_NEIGHBORS();
-					else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
-						iValue += /*4*/ GC.getMC_GIFT_WEIGHT_CLOSE();
-					else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
-						iValue += /*3*/ GC.getMC_GIFT_WEIGHT_FAR();
-
-					int iMediumGiftFriendship = pMinorCivAI->GetFriendshipFromGoldGift(eID, iMediumGift);
-					int iSmallGiftFriendship = pMinorCivAI->GetFriendshipFromGoldGift(eID, iSmallGift);
-
-					int iFriendshipWithMinor = pMinorCivAI->GetEffectiveFriendshipWithMajor(eID);
-
-					// Only care if we'll actually be Allies or better
-					bool bMediumGiftAllies = iFriendshipWithMinor + iMediumGiftFriendship >= pMinorCivAI->GetAlliesThreshold(eID);
-					bool bSmallGiftAllies = iFriendshipWithMinor + iSmallGiftFriendship >= pMinorCivAI->GetAlliesThreshold(eID);
-
-					// Loop through other players to see if we can pass them
-					for(int iOtherMajorLoop = 0; iOtherMajorLoop < MAX_MAJOR_CIVS; iOtherMajorLoop++)
-					{
-						PlayerTypes eOtherMajor = (PlayerTypes) iOtherMajorLoop;
-
-						// Player must be alive
-						if(!GET_PLAYER(eOtherMajor).isAlive())
-							continue;
-
-						int iOtherPlayerFriendshipWithMinor = pMinorCivAI->GetEffectiveFriendshipWithMajor(eOtherMajor);
-
-						// Player must have friendship with this major
-						if(iOtherPlayerFriendshipWithMinor <= 0)
-							continue;
-
-						// They must have more friendship with this guy than us
-						if(iFriendshipWithMinor <= iOtherPlayerFriendshipWithMinor)
-							continue;
-
-						// If we can pass them with a small gift, great
-						if(bSmallGiftAllies && iOtherPlayerFriendshipWithMinor - iFriendshipWithMinor < iSmallGiftFriendship)
-						{
-							iValue += /*15*/ GC.getMC_SMALL_GIFT_WEIGHT_PASS_OTHER_PLAYER();
-							sGiftInfo.bQuickBoost = true;
-							sGiftInfo.eMajorRival = eOtherMajor;
-						}
-						// If a medium gift passes them up, that's good too
-						else if(bMediumGiftAllies && iOtherPlayerFriendshipWithMinor - iFriendshipWithMinor < iMediumGiftFriendship)
-						{
-							iValue += /*10*/ GC.getMC_GIFT_WEIGHT_PASS_OTHER_PLAYER();
-							sGiftInfo.eMajorRival = eOtherMajor;
-						}
-						// We're behind and we can't catch up right now, so zero-out the value
-						else
-							iValue = 0;
-					}
-
-					// Are we already allies?
-					if(pMinorCivAI->IsAllies(eID))
-					{
-						// Are we close to losing our status?
-						if(pMinorCivAI->IsCloseToNotBeingAllies(eID))
-						{
-							iValue += /*150*/ GC.getMC_GIFT_WEIGHT_ALMOST_NOT_ALLIES();
-							sGiftInfo.bQuickBoost = true;
-						}
-						// Not going to lose status, so not worth going after this guy
-						else
-							iValue = 0;
-					}
-					// Are we already Friends?
-					else if(pMinorCivAI->IsFriends(eID))
-					{
-						// Are we close to losing our status?
-						if(pMinorCivAI->IsCloseToNotBeingFriends(eID))
-						{
-							iValue += /*125*/ GC.getMC_GIFT_WEIGHT_ALMOST_NOT_FRIENDS();
-							sGiftInfo.bQuickBoost = true;
-						}
-						// Not going to lose status, so not worth going after this guy
-						else if(!IsGoingForDiploVictory() || !GC.getGame().IsUnitedNationsActive())
-							iValue = 0;
-					}
-
-					// Did we bully you recently?  If so, giving you gold now would be very odd.
-					if(pMinorCivAI->IsRecentlyBulliedByMajor(eID))
-					{
-						iValue -= 100; //antonjs: todo: constant/XML
-					}
-
-					//antonjs: consider: different behavior to CS that have been bullied by others, bullied by rival, etc.
-
-					// Do we want it enough?
-					if(iValue > GC.getMC_GIFT_WEIGHT_THRESHOLD())
-					{
-						veMinorsToGiveGold.push_back(sGiftInfo, iValue);
-						bWantsToGiveGoldToThisMinor = true;
-					}
-				}
-			}
-
-			// Calculate desirability to bully a unit from this minor
-			if (bWantsToBullyUnit && !bWantsToBuyoutThisMinor && !bWantsToGiveGoldToThisMinor)  //antonjs: todo: xml
-			{
-				int iValue = 100; //antonjs: todo: XML, bully threshold
-				if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-					iValue = pMinor->GetMinorCivAI()->CalculateBullyScore(eID, true);
-
-				if (iValue <= 0)
-					continue;
-
-				if(eApproach == CIV_APPROACH_HOSTILE)
-				{
-					// Only bother if we can successfully bully
-					if (pMinor->GetMinorCivAI()->CanMajorBullyUnit(eID, MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING ? iValue - 25 : 0))
-					{
-#if defined(MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-						if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-						{
-							int iGrowthFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_GROWTH")) / 2;
-							int iScienceFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_SCIENCE")) / 2;
-							int iCultureFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_CULTURE")) / 2;
-							int iFaithFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_RELIGION")) / 2;
-							int iProductionFlavor = GetPlayer()->GetGrandStrategyAI()->GetPersonalityAndGrandStrategy((FlavorTypes)GC.getInfoTypeForString("FLAVOR_PRODUCTION")) / 2;
-
-							if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MILITARISTIC)
-							{
-								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_SCIENCE) * iScienceFlavor) / 5;
-							}
-							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MERCANTILE)
-							{
-								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_PRODUCTION) * iProductionFlavor) / 5;
-							}
-							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_CULTURED)
-							{
-								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_CULTURE) * iCultureFlavor) / 5;
-							}
-							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_RELIGIOUS)
-							{
-								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_FAITH) * iFaithFlavor) / 5;
-							}
-							else if (GET_PLAYER(eMinor).GetMinorCivAI()->GetTrait() == MINOR_CIV_TRAIT_MARITIME)
-							{
-								iValue += (GET_PLAYER(eMinor).GetMinorCivAI()->GetYieldTheftAmount(GetID(), YIELD_FOOD) * iGrowthFlavor) / 5;
-							}
-							iValue += GC.getGame().getSmallFakeRandNum(GetBoldness(), eID+m_pPlayer->getGlobalAverage(YIELD_CULTURE));
-						}
-						else
-						{
-#endif
-						// The closer we are the better, because the unit travels less distance to get home
-						if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-							iValue += 25;
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
-							iValue += 15;
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
-							iValue += -15;
-						else if(GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
-							iValue += -25;
-						//antonjs: consider: knock it down if is there a chance the worker will get captured by a nearby rival
-#if defined(MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-						}
-#endif
-						//antonjs: consider: if military unit, it would be a good thing to get it near a rival or ongoing war
-
-						// If this minor has a PtP from someone, bullying it could have big consequences
-						if (!GetPlayer()->GetPlayerTraits()->IgnoreBullyPenalties())
-						{
-							if (pMinor->GetMinorCivAI()->IsProtectedByAnyMajor())
-							{
-								iValue += -20;
-								//antonjs: consider: scale based on which major is protecting it
-							}
-							else if (pMinor->GetMinorCivAI()->GetAlly() != NO_PLAYER)
-							{
-								iValue += -20;
-							}
-							else
-							{
-								iValue += 20;
-							}
-						}
-						else
-						{
-							iValue += 25;
-						}
-#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
-						//Do we get a bonus from this?
-						if(MOD_BALANCE_CORE_AFRAID_ANNEX)
-						{
-							if (GetPlayer()->GetPlayerTraits()->IsBullyAnnex())
-							{
-								if(!GetPlayer()->IsEmpireUnhappy())
-								{
-									iValue += 100;
-								}
-								else
-								{
-									iValue -= 50;
-								}
-							}
-						}
-#endif
-#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
-						//Do we get a bonus from this?
-						if (MOD_BALANCE_CORE_AFRAID_ANNEX)
-						{
-							if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
-							{
-								iValue += 25;
-							}
-						}
-						for (int iI = 0; iI < NUM_YIELD_TYPES; iI++)
-						{
-							YieldTypes eYield = (YieldTypes)iI;
-							if (eYield != NO_YIELD)
-							{
-								if (GetPlayer()->GetYieldFromMinorDemand(eYield) > 0)
-								{
-									iValue += 10;
-								}
-							}
-						}
-
-						iValue -= GetDiploBalance() * 2;
-#endif
-						//antonjs: consider: allies or friends with another major
-						//antonjs: consider: distance to other majors
-						// If we are getting a bonus, don't mess that up!
-						if(pMinor->GetMinorCivAI()->IsAllies(eID) || pMinor->GetMinorCivAI()->IsFriends(eID))
-						{
-							if (!GetPlayer()->IsCanBullyFriendlyCS())
-								iValue = 0;
-						}
-						// Do we want it enough?
-						if(iValue > 100)  //antonjs: todo: XML for threshold
-						{
-							veMinorsToBullyUnit.push_back(eMinor, iValue);
-							bWantsToBullyUnitFromThisMinor = true;
-						}
-					}
-				}
-			}
-
-			// Calculate desirability to bully gold from this minor
-			if(bWantsToBullyGold && !bWantsToBuyoutThisMinor && !bWantsToGiveGoldToThisMinor && !bWantsToBullyUnitFromThisMinor)
-			{
-				int iValue = 100; //antonjs: todo: XML, bully threshold
-				if (MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING)
-					iValue = pMinor->GetMinorCivAI()->CalculateBullyScore(eID, false);
-
-				if (iValue <= 0)
-					continue;
-
-				if(eApproach == CIV_APPROACH_HOSTILE)
-				{
-					// Only bother if we can successfully bully
-					if (pMinor->GetMinorCivAI()->CanMajorBullyGold(eID, MOD_BALANCE_CORE_MINOR_VARIABLE_BULLYING ? iValue - 25 : 0))
-					{
-						// The closer we are the better
-						// The closer we are the better, because the unit travels less distance to get home
-						if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_NEIGHBORS)
-							iValue += 25;
-						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_CLOSE)
-							iValue += 15;
-						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_FAR)
-							iValue += -15;
-						else if (GetPlayer()->GetProximityToPlayer(eMinor) == PLAYER_PROXIMITY_DISTANT)
-							iValue += -25;
-
-						// We like to keep bullying the same minor
-						if(pMinor->GetMinorCivAI()->IsEverBulliedByMajor(eID))
-						{
-							iValue += 25;
-						}
-
-						// If we have not bullied this minor recently, but someone else has, it might be good to wait for an opportunity to gain a lot of INF
-						if(!pMinor->GetMinorCivAI()->IsRecentlyBulliedByMajor(eID) && pMinor->GetMinorCivAI()->IsRecentlyBulliedByAnyMajor())
-						{
-							iValue += -15;
-							//antonjs: consider: but if everyone near the minor has bullied it, then there is nobody to come to its rescue, so we can bully safely
-						}
-
-						// If this minor has a PtP from someone, bullying it could have big consequences
-						if(pMinor->GetMinorCivAI()->IsProtectedByAnyMajor())
-						{
-							iValue += -20;
-							//antonjs: consider: scale based on which major is protecting it
-						}
-						else
-						{
-							iValue += 20;
-						}
-						//antonjs: consider: allies or friends another major
-						//antonjs: consider: distance to other majors
-
-#if defined(MOD_BALANCE_CORE_AFRAID_ANNEX)
-						//Do we get a bonus from this?
-						if (MOD_BALANCE_CORE_AFRAID_ANNEX)
-						{
-							if (GetPlayer()->GetPlayerTraits()->GetBullyMilitaryStrengthModifier() != 0 || GetPlayer()->GetPlayerTraits()->GetBullyValueModifier() != 0)
-							{
-								iValue += 25;
-							}
-						}
-#endif
-
-						// If we are getting a bonus, don't mess that up!
-						if(pMinor->GetMinorCivAI()->IsAllies(eID) || pMinor->GetMinorCivAI()->IsFriends(eID))
-						{
-							if (!GetPlayer()->IsCanBullyFriendlyCS())
-								iValue = 0;
-						}
-
-						// Do we want it enough?
-						if(iValue > 100)  //antonjs: todo: XML for threshold
-						{
-							veMinorsToBullyGold.push_back(eMinor, iValue);
-							bWantsToBullyGoldFromThisMinor = true;
-						}
-					}
-				}
-			}
-
-		}
-
-		SetWantToRouteConnectToMinor(eMinor, bWantsToConnect);
-	}
-
-	int iGoldReserve = GetPlayer()->GetTreasury()->GetGold();
-
-	// Do we want to buyout a minor?
-	if(veMinorsToBuyout.size() > 0)
-	{
-		veMinorsToBuyout.SortItems();
-		int iGoldLeft = GetPlayer()->GetTreasury()->GetGold();
-		PlayerTypes eLoopMinor = NO_PLAYER;
-		for(int i = 0; i < veMinorsToBuyout.size(); i++)
-		{
-			eLoopMinor = veMinorsToBuyout.GetElement(i);
-			int iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetBuyoutCost(eID);
-			if(iGoldLeft >= iBuyoutCost)
-			{
-				if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBuyout(eID))
-				{
-					GC.getGame().DoMinorBuyout(eID, eLoopMinor);
-					iGoldLeft -= iBuyoutCost;
-					break; // Don't buyout more than once in a single turn
-				}
-				else
-				{
-					CvAssertMsg(false, "Chose a minor to buyout that cannot actually be bought! Please send Anton your save file and version.");
-				}
-			}
-			else
-			{
-				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
-				{
-					LogMinorCivBuyout(eLoopMinor, iBuyoutCost, /*bSaving*/ true);
-
-					int iPriority = GC.getAI_GOLD_PRIORITY_BUYOUT_CITY_STATE();
-					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iBuyoutCost, iPriority);
-				}
-			}
-#if defined(MOD_BALANCE_CORE)
-			iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetMarriageCost(eID);
-			if(iGoldLeft >= iBuyoutCost)
-			{
-				if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorDiploMarriage(eID))
-				{
-					GET_PLAYER(eLoopMinor).GetMinorCivAI()->DoMarriage(eID);
-					iBuyoutCost = GET_PLAYER(eLoopMinor).GetMinorCivAI()->GetMarriageCost(eID);
-					iGoldLeft -= iBuyoutCost;
-				}
-				else
-				{
-					CvAssertMsg(false, "Chose a minor to buyout that cannot actually be bought! Please send Anton your save file and version.");
-				}
-			}
-			else
-			{
-				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
-				{
-					LogMinorCivBuyout(eLoopMinor, iBuyoutCost, /*bSaving*/ true);
-
-					int iPriority = GC.getAI_GOLD_PRIORITY_BUYOUT_CITY_STATE();
-					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iBuyoutCost, iPriority);
-				}
-			}
-#endif
-		}
-	}
-
-	// Do we want to give someone Gold enough to actually do it?
-	if(veMinorsToGiveGold.size() > 0)
-	{
-		veMinorsToGiveGold.SortItems(); // Sort from highest desirability to lowest
-		for(int i = 0; i < veMinorsToGiveGold.size(); i++)
-		{
-			int iGoldLeft = GetPlayer()->GetTreasury()->GetGold();
-			MinorGoldGiftInfo sGift = veMinorsToGiveGold.GetElement(i);
-#if defined(MOD_BALANCE_CORE)
-			//Interception! Let's do a tile improvement if we can (and we'll benefit from it)
-			if (sGift.eMinor != NO_PLAYER && GET_PLAYER(sGift.eMinor).GetMinorCivAI()->IsFriends(GetID()))
-			{
-				CvPlot* pImprovementPlot = GET_PLAYER(sGift.eMinor).GetMinorCivAI()->GetMajorGiftTileImprovement(GetID());
-				if (pImprovementPlot != NULL)
-				{
-					GET_PLAYER(sGift.eMinor).GetMinorCivAI()->DoTileImprovementGiftFromMajor(GetID(), pImprovementPlot->getX(), pImprovementPlot->getY());
-					LogMinorCivGiftTile(sGift.eMinor);
-				}
-			}
-#endif
-#if defined(MOD_DIPLOMACY_CITYSTATES)
-			//Default is 1 - this will prevent the AI from trying to spam gold gifts of zero gold.
-			if (MOD_DIPLOMACY_CITYSTATES && GC.getCSD_GOLD_GIFT_DISABLED() > 0)
-			{
-				continue;
-			}
-#endif			
-			sGift.iGoldAmount = 0;
-
-			if(iGoldLeft >= iSmallGift && sGift.bQuickBoost)
-				sGift.iGoldAmount = iSmallGift;
-			else if(iGoldLeft >= iLargeGift)
-				sGift.iGoldAmount = iLargeGift;
-			else if(iGoldLeft >= iMediumGift)
-				sGift.iGoldAmount = iMediumGift;
-
-			int iOldFriendship = GET_PLAYER(sGift.eMinor).GetMinorCivAI()->GetEffectiveFriendshipWithMajor(eID);
-
-			// Able to give a gift?  Don't gift more than half of the gold we have in one turn
-			if(sGift.iGoldAmount > 0 && iGoldLeft >= (iGoldReserve / 2))
-			{
-				GET_PLAYER(sGift.eMinor).GetMinorCivAI()->DoGoldGiftFromMajor(GetID(), sGift.iGoldAmount); //antonjs: todo: go through CvGame instead?
-
-				LogMinorCivGiftGold(sGift.eMinor, iOldFriendship, sGift.iGoldAmount, /*bSaving*/ false, sGift.bQuickBoost, sGift.eMajorRival);
-
-				if(GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
-					GetPlayer()->GetEconomicAI()->CancelSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT);
-			}
-			// Can't afford gift yet, so start saving
-			else
-			{
-				if(!GetPlayer()->GetEconomicAI()->IsSavingForThisPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT))
-				{
-					int iAmountToSaveFor = iMediumGift;
-
-					if(sGift.bQuickBoost)
-						iAmountToSaveFor = iSmallGift;
-
-					LogMinorCivGiftGold(sGift.eMinor, iOldFriendship, iAmountToSaveFor, /*bSaving*/ true, sGift.bQuickBoost, sGift.eMajorRival);
-
-					int iPriority = GC.getAI_GOLD_PRIORITY_DIPLOMACY_BASE();
-					iPriority += GC.getAI_GOLD_PRIORITY_DIPLOMACY_PER_FLAVOR_POINT() * iDiplomacyFlavor;
-					GetPlayer()->GetEconomicAI()->StartSaveForPurchase(PURCHASE_TYPE_MINOR_CIV_GIFT, iAmountToSaveFor, iPriority);
-				}
-			}
-		}
-	}
-
-	// Do we want a unit enough to bully someone?
-	if(veMinorsToBullyUnit.size() > 0)
-	{
-		veMinorsToBullyUnit.SortItems();
-		PlayerTypes eLoopMinor = NO_PLAYER;
-		for(int i = 0; i < veMinorsToBullyUnit.size(); i++)
-		{
-			eLoopMinor = veMinorsToBullyUnit.GetElement(i);
-			CvAssertMsg(eLoopMinor != NO_PLAYER, "Trying to bully a unit from NO_PLAYER! Please send Anton your save file and version.");
-			if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBullyUnit(eID))
-			{
-				GC.getGame().DoMinorBullyUnit(eID, eLoopMinor);
-				break; // Don't bully a unit more than once in a single turn
-			}
-			else
-			{
-				CvAssertMsg(false, "Chose a minor to bully unit from that cannot actually be bullied! Please send Anton your save file and version.");
-			}
-		}
-	}
-
-	// Do we want gold enough to bully someone?
-	if(veMinorsToBullyGold.size() > 0)
-	{
-		veMinorsToBullyGold.SortItems();
-		PlayerTypes eLoopMinor = NO_PLAYER;
-		for(int i = 0; i < veMinorsToBullyGold.size(); i++)
-		{
-			eLoopMinor = veMinorsToBullyGold.GetElement(i);
-			CvAssertMsg(eLoopMinor != NO_PLAYER, "Trying to bully gold from NO_PLAYER! Please send Anton your save file and version.");
-			if(GET_PLAYER(eLoopMinor).GetMinorCivAI()->CanMajorBullyGold(eID))
-			{
-				GC.getGame().DoMinorBullyGold(eID, eLoopMinor);
-			}
-			else
-			{
-				CvAssertMsg(false, "Chose a minor to bully gold from that cannot actually be bullied! Please send Anton your save file and version.");
-			}
-		}
-	}
-}
-
-void CvDiplomacyAI::DoUpdateMinorCivProtection(PlayerTypes eMinor, CivApproachTypes eApproach)
-{
-	// Only change protection if this player is not human controlled!
-	if (!GetPlayer()->isHuman())
-	{
-		if (eApproach == CIV_APPROACH_FRIENDLY || GET_PLAYER(eMinor).GetMinorCivAI()->GetAlly() == GetID())
-		{
-			// We are protective, so do a PtP if we are able to and haven't already
-			if (GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorStartProtection(GetID()))
-			{
-				GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, true);
-				DoMakePublicDeclaration(PUBLIC_DECLARATION_PROTECT_MINOR, eMinor, -1, eMinor);
-			}
-		}
-		else
-		{
-			// We are not protective, so revoke PtP if we can
-			if (GET_PLAYER(eMinor).GetMinorCivAI()->IsProtectedByMajor(GetID()) && GET_PLAYER(eMinor).GetMinorCivAI()->CanMajorWithdrawProtection(GetID()))
-			{
-				GC.getGame().DoMinorPledgeProtection(GetID(), eMinor, false);
-				DoMakePublicDeclaration(PUBLIC_DECLARATION_ABANDON_MINOR, eMinor, -1, eMinor);
 			}
 		}
 	}

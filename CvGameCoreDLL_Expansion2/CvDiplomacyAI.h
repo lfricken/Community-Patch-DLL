@@ -947,9 +947,6 @@ public:
 	void SetHelpRequestTooSoonNumTurns(PlayerTypes ePlayer, int iValue);
 	bool IsHelpRequestTooSoon(PlayerTypes ePlayer) const;
 
-	bool IsTargetingVassal(PlayerTypes ePlayer) const;
-	void SetTargetingVassal(PlayerTypes ePlayer, bool bValue);
-
 	bool IsHasPaidTributeTo(PlayerTypes ePlayer) const;
 	void SetHasPaidTributeTo(PlayerTypes ePlayer, bool bValue);
 
@@ -2083,7 +2080,6 @@ private:
 	bool m_abHasPaidTributeTo[MAX_MAJOR_CIVS];
 	int m_aiBrokenVassalAgreementTurn[MAX_MAJOR_CIVS];
 	short m_aiPlayerVassalageFailedProtectValue[MAX_MAJOR_CIVS];
-	bool m_abTargetingVassal[MAX_MAJOR_CIVS];
 	short m_aiPlayerVassalageProtectValue[MAX_MAJOR_CIVS];
 	int m_aiPlayerVassalagePeacefullyRevokedTurn[MAX_MAJOR_CIVS];
 	int m_aiPlayerVassalageForcefullyRevokedTurn[MAX_MAJOR_CIVS];

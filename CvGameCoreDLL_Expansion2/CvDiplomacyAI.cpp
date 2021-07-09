@@ -341,7 +341,6 @@ void CvDiplomacyAI::Reset()
 		m_aeShareOpinionResponse[iI] = NO_SHARE_OPINION_RESPONSE;
 		m_aiHelpRequestAcceptedTurn[iI] = -1;
 		m_aiHelpRequestTooSoonNumTurns[iI] = -1;
-		m_abTargetingVassal[iI] = false;
 		m_aiPlayerVassalageFailedProtectValue[iI] = 0;
 		m_aiPlayerVassalageProtectValue[iI] = 0;
 		m_aiPlayerVassalagePeacefullyRevokedTurn[iI] = -1;
@@ -661,7 +660,6 @@ void CvDiplomacyAI::Serialize(DiplomacyAI& diplomacyAI, Visitor& visitor)
 	visitor(diplomacyAI.m_aeShareOpinionResponse);
 	visitor(diplomacyAI.m_aiHelpRequestAcceptedTurn);
 	visitor(diplomacyAI.m_aiHelpRequestTooSoonNumTurns);
-	visitor(diplomacyAI.m_abTargetingVassal);
 	visitor(diplomacyAI.m_aiPlayerVassalageFailedProtectValue);
 	visitor(diplomacyAI.m_aiPlayerVassalageProtectValue);
 	visitor(diplomacyAI.m_aiPlayerVassalagePeacefullyRevokedTurn);
@@ -6936,19 +6934,6 @@ bool CvDiplomacyAI::IsHelpRequestTooSoon(PlayerTypes ePlayer) const
 		return true;
 
 	return false;
-}
-
-/// Are we targeting this player's vassal for war?
-bool CvDiplomacyAI::IsTargetingVassal(PlayerTypes ePlayer) const
-{
-	if (ePlayer < 0 || ePlayer >= MAX_MAJOR_CIVS) return false;
-	return m_abTargetingVassal[ePlayer];
-}
-
-void CvDiplomacyAI::SetTargetingVassal(PlayerTypes ePlayer, bool bValue)
-{
-	if (ePlayer < 0 || ePlayer >= MAX_MAJOR_CIVS) return;
-	m_abTargetingVassal[ePlayer] = bValue;
 }
 
 /// Returns if we accepted a demand from ePlayer while we were his vassal
@@ -13667,8 +13652,6 @@ void CvDiplomacyAI::SelectApproachTowardsVassal(PlayerTypes ePlayer)
 
 								for (size_t i=0; i<vMasterTeam.size(); i++)
 								{
-									SetTargetingVassal(vMasterTeam[i], true);
-
 									if (!IsPlayerValid(vMasterTeam[i]))
 										continue;
 
@@ -13749,7 +13732,7 @@ void CvDiplomacyAI::SelectBestApproachTowardsMajorCiv(PlayerTypes ePlayer, bool 
 		iGameEra = 0;
 
 	bool bWeHaveUUTech = GetPlayer()->HasUUPeriod() && GetPlayer()->GetPlayerTechs()->HasUUTech();
-	bool bWeHaveUUActive = GetPlayer()->HasUUPeriod() && bWeHaveUUTech && GetPlayer()->HasUUActive();
+	bool bWeHaveUUActive = bWeHaveUUTech && GetPlayer()->HasUUActive();
 
 	// Player traits
 	CvPlayerTraits* pTraits = GetPlayer()->GetPlayerTraits();
@@ -20930,35 +20913,28 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 			}
 		}
 
-		// Check to make sure we're still targeting any vassals of theirs if they're flagged as such
-		if (IsTargetingVassal(*it))
+		// Check if we're targeting any vassals of theirs
+		bool bFoundTargetedVassal = false;
+
+		for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 		{
-			bool bFoundOne = false;
+			PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
 
-			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+			if (IsPlayerValid(eLoopPlayer) && GET_PLAYER(eLoopPlayer).GetDiplomacyAI()->IsVassal(*it))
 			{
-				PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
-
-				if (IsPlayerValid(eLoopPlayer) && GET_PLAYER(eLoopPlayer).GetDiplomacyAI()->IsVassal(*it))
+				if (GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
 				{
-					if (GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
-					{
-						bFoundOne = true;
-						break;
-					}
+					bFoundTargetedVassal = true;
+					break;
 				}
 			}
+		}
 
-			if (bFoundOne)
+		if (bFoundTargetedVassal)
+		{
+			if (std::find(vPlanningWarPlayers.begin(), vPlanningWarPlayers.end(), *it) == vPlanningWarPlayers.end())
 			{
-				if (std::find(vPlanningWarPlayers.begin(), vPlanningWarPlayers.end(), *it) == vPlanningWarPlayers.end())
-				{
-					vPlanningWarPlayers.push_back(*it);
-				}
-			}
-			else
-			{
-				SetTargetingVassal(*it, false);
+				vPlanningWarPlayers.push_back(*it);
 			}
 		}
 	}
@@ -21293,7 +21269,8 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 			SetPotentialWarTarget(*it, false);
 		}
 	}
-	// Otherwise, mark all valid players as potential war targets
+	// Otherwise, mark all players we might want to attack as potential war targets
+	// War sanity is not checked here (to allow for impulse wars and betrayals), but it will be before a potential war is declared
 	else
 	{
 		for (std::vector<PlayerTypes>::iterator it = vValidPlayers.begin(); it != vValidPlayers.end(); it++)
@@ -22268,10 +22245,22 @@ void CvDiplomacyAI::SelectBestApproachTowardsMinorCiv(PlayerTypes ePlayer, std::
 	}
 
 	////////////////////////////////////
+	// AT WAR WITH MINOR?
+	////////////////////////////////////
+
+	// No bullying while at war!
+	if (IsAtWar(ePlayer))
+	{
+		vApproachScores[CIV_APPROACH_HOSTILE] = 0;
+	}
+
+	////////////////////////////////////
 	// ALLIES WITH MINOR?
 	////////////////////////////////////
 
-	if (GET_PLAYER(ePlayer).GetMinorCivAI()->GetAlly() == eMyPlayer)
+	PlayerTypes eAlly = GET_PLAYER(ePlayer).GetMinorCivAI()->GetAlly();
+
+	if (eAlly == eMyPlayer)
 	{
 		// Disfavor conquest and bullying if they are our ally
 		vApproachScores[CIV_APPROACH_WAR] = 0;
@@ -22283,6 +22272,11 @@ void CvDiplomacyAI::SelectBestApproachTowardsMinorCiv(PlayerTypes ePlayer, std::
 
 		vApproachScores[CIV_APPROACH_FRIENDLY] += bAnyFriendshipBonus ? vApproachBias[CIV_APPROACH_FRIENDLY] * 6 : vApproachBias[CIV_APPROACH_FRIENDLY] * 3;
 		vApproachScores[CIV_APPROACH_NEUTRAL] = 0;
+	}
+	else if (IsAtWar(eAlly) || AvoidExchangesWithPlayer(eAlly, /*bWarOnly*/ true))
+	{
+		// If we're at war with or planning war against their ally, don't try to bully their City-States
+		vApproachScores[CIV_APPROACH_HOSTILE] = 0;
 	}
 
 	////////////////////////////////////
@@ -24837,6 +24831,18 @@ void CvDiplomacyAI::DoContactMinorCivs()
 				continue;
 			}
 
+			// Do they have valuable resources?
+			int iNumWeLack = pMinorAI->GetNumResourcesMajorLacks(GetID());
+			if (iNumWeLack > 0)
+			{
+				if (GetPlayer()->IsEmpireVeryUnhappy())
+					iWeight += 50 * iNumWeLack;
+				else if (GetPlayer()->IsEmpireUnhappy())
+					iWeight += 35 * iNumWeLack;
+				else
+					iWeight += 25 * iNumWeLack;
+			}
+
 			// Can we afford to supply and pay for their units?
 			int iMinorUnits = 0;
 			int iMinorMilitaryUnits = 0;
@@ -24883,7 +24889,7 @@ void CvDiplomacyAI::DoContactMinorCivs()
 
 			// Are we unhappy?
 			if (GetPlayer()->IsEmpireVeryUnhappy())
-				iWeight -= 200;
+				iWeight -= 100;
 			else if (GetPlayer()->IsEmpireUnhappy())
 				iWeight -= 50;
 
@@ -24958,6 +24964,14 @@ void CvDiplomacyAI::DoContactMinorCivs()
 	// Are we bullying someone?
 	if (eBullyTarget != NO_PLAYER && std::find(vValidMinors.begin(), vValidMinors.end(), eBullyTarget) != vValidMinors.end())
 	{
+		if (std::find(vValidMinors.begin(), vValidMinors.end(), eBullyTarget) != vValidMinors.end())
+		{
+		}
+		// Target has become invalid (probably due to a war declaration)
+		else
+		{
+			SetCSBullyTargetPlayer(NO_PLAYER);
+		}
 	}
 
 

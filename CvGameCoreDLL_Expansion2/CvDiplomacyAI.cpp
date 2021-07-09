@@ -20914,27 +20914,30 @@ void CvDiplomacyAI::DoUpdateWarTargets()
 		}
 
 		// Check if we're targeting any vassals of theirs
-		bool bFoundTargetedVassal = false;
-
-		for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
+		if (GET_PLAYER(*it).GetNumVassals() > 0)
 		{
-			PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
+			bool bFoundTargetedVassal = false;
 
-			if (IsPlayerValid(eLoopPlayer) && GET_PLAYER(eLoopPlayer).GetDiplomacyAI()->IsVassal(*it))
+			for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 			{
-				if (GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
+				PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
+
+				if (IsPlayerValid(eLoopPlayer) && GET_PLAYER(eLoopPlayer).GetDiplomacyAI()->IsVassal(*it))
 				{
-					bFoundTargetedVassal = true;
-					break;
+					if (GetCivApproach(eLoopPlayer) == CIV_APPROACH_WAR)
+					{
+						bFoundTargetedVassal = true;
+						break;
+					}
 				}
 			}
-		}
 
-		if (bFoundTargetedVassal)
-		{
-			if (std::find(vPlanningWarPlayers.begin(), vPlanningWarPlayers.end(), *it) == vPlanningWarPlayers.end())
+			if (bFoundTargetedVassal)
 			{
-				vPlanningWarPlayers.push_back(*it);
+				if (std::find(vPlanningWarPlayers.begin(), vPlanningWarPlayers.end(), *it) == vPlanningWarPlayers.end())
+				{
+					vPlanningWarPlayers.push_back(*it);
+				}
 			}
 		}
 	}

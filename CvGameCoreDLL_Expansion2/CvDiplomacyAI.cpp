@@ -22276,7 +22276,7 @@ void CvDiplomacyAI::SelectBestApproachTowardsMinorCiv(PlayerTypes ePlayer, std::
 		vApproachScores[CIV_APPROACH_FRIENDLY] += bAnyFriendshipBonus ? vApproachBias[CIV_APPROACH_FRIENDLY] * 6 : vApproachBias[CIV_APPROACH_FRIENDLY] * 3;
 		vApproachScores[CIV_APPROACH_NEUTRAL] = 0;
 	}
-	else if (IsAtWar(eAlly) || AvoidExchangesWithPlayer(eAlly, /*bWarOnly*/ true))
+	else if (AvoidExchangesWithPlayer(eAlly, /*bWarOnly*/ true))
 	{
 		// If we're at war with or planning war against their ally, don't try to bully their City-States
 		vApproachScores[CIV_APPROACH_HOSTILE] = 0;

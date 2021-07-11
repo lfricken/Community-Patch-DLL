@@ -6881,7 +6881,7 @@ CvLeaderHeadInfo::~CvLeaderHeadInfo()
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetVictoryCompetitiveness() const
 {
-	if (m_iVictoryCompetitiveness <= 0 || m_iVictoryCompetitiveness > 30)
+	if (m_iVictoryCompetitiveness <= -2 || m_iVictoryCompetitiveness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iVictoryCompetitiveness;
@@ -6889,7 +6889,7 @@ int CvLeaderHeadInfo::GetVictoryCompetitiveness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetWonderCompetitiveness() const
 {
-	if (m_iWonderCompetitiveness <= 0 || m_iWonderCompetitiveness > 30)
+	if (m_iWonderCompetitiveness <= -2 || m_iWonderCompetitiveness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iWonderCompetitiveness;
@@ -6897,7 +6897,7 @@ int CvLeaderHeadInfo::GetWonderCompetitiveness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetMinorCivCompetitiveness() const
 {
-	if (m_iMinorCivCompetitiveness <= 0 || m_iMinorCivCompetitiveness > 30)
+	if (m_iMinorCivCompetitiveness <= -2 || m_iMinorCivCompetitiveness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iMinorCivCompetitiveness;
@@ -6905,7 +6905,7 @@ int CvLeaderHeadInfo::GetMinorCivCompetitiveness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetBoldness() const
 {
-	if (m_iBoldness <= 0 || m_iBoldness > 30)
+	if (m_iBoldness <= -2 || m_iBoldness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iBoldness;
@@ -6913,7 +6913,7 @@ int CvLeaderHeadInfo::GetBoldness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetDiploBalance() const
 {
-	if (m_iDiploBalance <= 0 || m_iDiploBalance > 30)
+	if (m_iDiploBalance <= -2 || m_iDiploBalance > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iDiploBalance;
@@ -6921,7 +6921,7 @@ int CvLeaderHeadInfo::GetDiploBalance() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetWarmongerHate() const
 {
-	if (m_iWarmongerHate <= 0 || m_iWarmongerHate > 30)
+	if (m_iWarmongerHate <= -2 || m_iWarmongerHate > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iWarmongerHate;
@@ -6929,7 +6929,7 @@ int CvLeaderHeadInfo::GetWarmongerHate() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetDoFWillingness() const
 {
-	if (m_iDoFWillingness <= 0 || m_iDoFWillingness > 30)
+	if (m_iDoFWillingness <= -2 || m_iDoFWillingness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iDoFWillingness;
@@ -6937,7 +6937,7 @@ int CvLeaderHeadInfo::GetDoFWillingness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetDenounceWillingness() const
 {
-	if (m_iDenounceWillingness <= 0 || m_iDenounceWillingness > 30)
+	if (m_iDenounceWillingness <= -2 || m_iDenounceWillingness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iDenounceWillingness;
@@ -6945,7 +6945,7 @@ int CvLeaderHeadInfo::GetDenounceWillingness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetLoyalty() const
 {
-	if (m_iLoyalty <= 0 || m_iLoyalty > 30)
+	if (m_iLoyalty <= -2 || m_iLoyalty > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iLoyalty;
@@ -6953,7 +6953,7 @@ int CvLeaderHeadInfo::GetLoyalty() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetForgiveness() const
 {
-	if (m_iForgiveness <= 0 || m_iForgiveness > 30)
+	if (m_iForgiveness <= -2 || m_iForgiveness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iForgiveness;
@@ -6961,7 +6961,7 @@ int CvLeaderHeadInfo::GetForgiveness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetNeediness() const
 {
-	if (m_iNeediness <= 0 || m_iNeediness > 30)
+	if (m_iNeediness <= -2 || m_iNeediness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iNeediness;
@@ -6969,7 +6969,7 @@ int CvLeaderHeadInfo::GetNeediness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetMeanness() const
 {
-	if (m_iMeanness <= 0 || m_iMeanness > 30)
+	if (m_iMeanness <= -2 || m_iMeanness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iMeanness;
@@ -6977,7 +6977,7 @@ int CvLeaderHeadInfo::GetMeanness() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetChattiness() const
 {
-	if (m_iChattiness <= 0 || m_iChattiness > 30)
+	if (m_iChattiness <= -2 || m_iChattiness > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_iChattiness;
@@ -6988,13 +6988,13 @@ int CvLeaderHeadInfo::GetWarBias(bool bMinor) const
 {
 	if (bMinor)
 	{
-		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[3] <= 0 || m_piMinorCivApproachBiases[3] > 30)
+		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[3] <= -2 || m_piMinorCivApproachBiases[3] > 30)
 			return GC.getGame().GetDefaultFlavorValue();
 
 		return m_piMinorCivApproachBiases[3]; // xml: MINOR_CIV_APPROACH_CONQUEST
 	}
 
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[0] <= 0 || m_piMajorCivApproachBiases[0] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[0] <= -2 || m_piMajorCivApproachBiases[0] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[0]; // xml: MAJOR_CIV_APPROACH_WAR
@@ -7004,13 +7004,13 @@ int CvLeaderHeadInfo::GetHostileBias(bool bMinor) const
 {
 	if (bMinor)
 	{
-		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[4] <= 0 || m_piMinorCivApproachBiases[4] > 30)
+		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[4] <= -2 || m_piMinorCivApproachBiases[4] > 30)
 			return GC.getGame().GetDefaultFlavorValue();
 
 		return m_piMinorCivApproachBiases[4]; // xml: MINOR_CIV_APPROACH_BULLY
 	}
 
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[1] <= 0 || m_piMajorCivApproachBiases[1] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[1] <= -2 || m_piMajorCivApproachBiases[1] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[1]; // xml: MAJOR_CIV_APPROACH_HOSTILE
@@ -7018,7 +7018,7 @@ int CvLeaderHeadInfo::GetHostileBias(bool bMinor) const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetDeceptiveBias() const
 {
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[2] <= 0 || m_piMajorCivApproachBiases[2] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[2] <= -2 || m_piMajorCivApproachBiases[2] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[2]; // xml: MAJOR_CIV_APPROACH_DECEPTIVE
@@ -7026,7 +7026,7 @@ int CvLeaderHeadInfo::GetDeceptiveBias() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetGuardedBias() const
 {
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[3] <= 0 || m_piMajorCivApproachBiases[3] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[3] <= -2 || m_piMajorCivApproachBiases[3] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[3]; // xml: MAJOR_CIV_APPROACH_GUARDED
@@ -7034,7 +7034,7 @@ int CvLeaderHeadInfo::GetGuardedBias() const
 //------------------------------------------------------------------------------
 int CvLeaderHeadInfo::GetAfraidBias() const
 {
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[4] <= 0 || m_piMajorCivApproachBiases[4] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[4] <= -2 || m_piMajorCivApproachBiases[4] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[4]; // xml: MAJOR_CIV_APPROACH_AFRAID
@@ -7044,13 +7044,13 @@ int CvLeaderHeadInfo::GetNeutralBias(bool bMinor) const
 {
 	if (bMinor)
 	{
-		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[0] <= 0 || m_piMinorCivApproachBiases[0] > 30)
+		if (!m_piMinorCivApproachBiases || m_piMinorCivApproachBiases[0] <= -2 || m_piMinorCivApproachBiases[0] > 30)
 			return GC.getGame().GetDefaultFlavorValue();
 
 		return m_piMinorCivApproachBiases[0]; // xml: MINOR_CIV_APPROACH_IGNORE
 	}
 
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[6] <= 0 || m_piMajorCivApproachBiases[6] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[6] <= -2 || m_piMajorCivApproachBiases[6] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[6]; // xml: MAJOR_CIV_APPROACH_NEUTRAL
@@ -7068,14 +7068,14 @@ int CvLeaderHeadInfo::GetFriendlyBias(bool bMinor) const
 		// If neither flavor exists, use the default flavor value.
 		// If only one flavor exists, use that flavor value.
 		// If both flavors exist, use the maximum.
-		if (m_piMinorCivApproachBiases[1] <= 0 || m_piMinorCivApproachBiases[1] > 30)
+		if (m_piMinorCivApproachBiases[1] <= -2 || m_piMinorCivApproachBiases[1] > 30)
 		{
-			if (m_piMinorCivApproachBiases[2] <= 0 || m_piMinorCivApproachBiases[2] > 30)
+			if (m_piMinorCivApproachBiases[2] <= -2 || m_piMinorCivApproachBiases[2] > 30)
 				return GC.getGame().GetDefaultFlavorValue();
 
 			return m_piMinorCivApproachBiases[2];
 		}
-		else if (m_piMinorCivApproachBiases[2] <= 0 || m_piMinorCivApproachBiases[2] > 30)
+		else if (m_piMinorCivApproachBiases[2] <= -2 || m_piMinorCivApproachBiases[2] > 30)
 		{
 			return m_piMinorCivApproachBiases[1];
 		}
@@ -7083,7 +7083,7 @@ int CvLeaderHeadInfo::GetFriendlyBias(bool bMinor) const
 		return std::max(m_piMinorCivApproachBiases[1], m_piMinorCivApproachBiases[2]); // xml: MINOR_CIV_APPROACH_FRIENDLY, MINOR_CIV_APPROACH_PROTECTIVE
 	}
 
-	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[5] <= 0 || m_piMajorCivApproachBiases[5] > 30)
+	if (!m_piMajorCivApproachBiases || m_piMajorCivApproachBiases[5] <= -2 || m_piMajorCivApproachBiases[5] > 30)
 		return GC.getGame().GetDefaultFlavorValue();
 
 	return m_piMajorCivApproachBiases[5]; // xml: MAJOR_CIV_APPROACH_FRIENDLY

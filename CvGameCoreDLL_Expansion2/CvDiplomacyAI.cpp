@@ -1387,11 +1387,12 @@ void CvDiplomacyAI::SelectDefaultVictoryFocus()
 	}
 
 	// Insufficient minor civs?
-	if (GC.getGame().GetNumMinorCivsEver() < GC.getGame().countMajorCivsEverAlive())
+	int iNumMinorsEver = GC.getGame().GetNumMinorCivsEver();
+	if (iNumMinorsEver < GC.getGame().countMajorCivsEverAlive())
 	{
 		iDiplomatWeight -= 5;
 
-		if (GC.getGame().GetNumMinorCivsEver() == 0)
+		if (iNumMinorsEver <= 0)
 		{
 			iDiplomatWeight -= 5;
 		}

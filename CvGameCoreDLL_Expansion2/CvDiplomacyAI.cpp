@@ -1236,6 +1236,10 @@ void CvDiplomacyAI::DoInitializePersonality()
 		m_aiMinorCivApproachBiases[CIV_APPROACH_HOSTILE] = GetRandomPersonalityWeight(playerLeaderInfo.GetHostileBias(true), iSeed);
 		m_aiMinorCivApproachBiases[CIV_APPROACH_NEUTRAL] = GetRandomPersonalityWeight(playerLeaderInfo.GetNeutralBias(true), iSeed);
 		m_aiMinorCivApproachBiases[CIV_APPROACH_FRIENDLY] = GetRandomPersonalityWeight(playerLeaderInfo.GetFriendlyBias(true), iSeed);
+
+		// Minimal loyalty? We're willing to backstab.
+		if (GetLoyalty() <= 2)
+			SetBackstabber(true);
 	}
 
 	// Now that we've picked our flavors, select our default Victory Focus.
@@ -1256,10 +1260,6 @@ void CvDiplomacyAI::DoInitializePersonality()
 			m_aeCivApproach[eLoopPlayer] = CIV_APPROACH_FRIENDLY;
 		}
 	}
-
-	// Minimal loyalty? We're willing to backstab.
-	if (GetLoyalty() <= 2)
-		SetBackstabber(true);
 }
 
 //	-----------------------------------------------------------------------------------------------

@@ -1258,6 +1258,17 @@ void CvDiplomacyAI::DoInitializePersonality()
 		if (IsTeammate(eLoopPlayer))
 		{
 			m_aeCivApproach[eLoopPlayer] = CIV_APPROACH_FRIENDLY;
+
+			if (GET_PLAYER(eLoopPlayer).isMajorCiv())
+			{
+				m_aeCivOpinion[eLoopPlayer] = CIV_OPINION_ALLY;
+				m_aiCachedOpinionWeight[eLoopPlayer] = SHRT_MIN;
+			}
+		}
+		else if (IsAlwaysAtWar(eLoopPlayer) && GET_PLAYER(eLoopPlayer).isMajorCiv())
+		{
+			m_aeCivOpinion[eLoopPlayer] = CIV_OPINION_UNFORGIVABLE;
+			m_aiCachedOpinionWeight[eLoopPlayer] = SHRT_MAX;
 		}
 	}
 }
@@ -12492,11 +12503,12 @@ void CvDiplomacyAI::DoUpdateOpinions()
 	DoTestOpinionModifiers();
 
 	// Loop through all (known) Majors
+	bool bMPDealUpdates = MOD_ACTIVE_DIPLOMACY && GC.getGame().isReallyNetworkMultiPlayer() && !GetPlayer()->isHuman();
 	for (int iPlayerLoop = 0; iPlayerLoop < MAX_MAJOR_CIVS; iPlayerLoop++)
 	{
 		PlayerTypes eLoopPlayer = (PlayerTypes) iPlayerLoop;
 
-		if (GET_PLAYER(eLoopPlayer).isMajorCiv() && IsHasMet(eLoopPlayer) && GET_PLAYER(eLoopPlayer).isAlive())
+		if (GET_PLAYER(eLoopPlayer).isMajorCiv() && GET_PLAYER(eLoopPlayer).isAlive() && GET_PLAYER(eLoopPlayer).getNumCities() > 0 && !IsAlwaysAtWar(eLoopPlayer) && IsHasMet(eLoopPlayer, bMPDealUpdates))
 		{
 			DoUpdateOnePlayerOpinion(eLoopPlayer);
 		}
@@ -12506,69 +12518,49 @@ void CvDiplomacyAI::DoUpdateOpinions()
 /// What is our basic opinion of the role a player has in our game?
 void CvDiplomacyAI::DoUpdateOnePlayerOpinion(PlayerTypes ePlayer)
 {
-	CivOpinionTypes eOpinion;
-
-	// Teammates?
-	if (IsTeammate(ePlayer))
+	// Human shadow AI skips the normal code
+	if (GetPlayer()->isHuman())
 	{
-		eOpinion = CIV_OPINION_ALLY;
-		SetCachedOpinionWeight(ePlayer, SHRT_MIN);
+		if (IsAtWar(ePlayer) || IsDenouncedPlayer(ePlayer))
+			SetCivOpinion(ePlayer, CIV_OPINION_ENEMY);
+		else if (IsDoFAccepted(ePlayer) || IsHasDefensivePact(ePlayer))
+			SetCivOpinion(ePlayer, CIV_OPINION_FRIEND);
+		else
+			SetCivOpinion(ePlayer, CIV_OPINION_NEUTRAL);
 
-#if defined(MOD_ACTIVE_DIPLOMACY)
-		if (GC.getGame().isReallyNetworkMultiPlayer() && MOD_ACTIVE_DIPLOMACY && !GetPlayer()->isHuman())
+		return;
+	}
+	else if (MOD_ACTIVE_DIPLOMACY && IsTeammate(ePlayer))
+	{
+		// JdH => calculate ai to human trade priority for multiplayer
+		if (GC.getGame().isReallyNetworkMultiPlayer() && !GetPlayer()->isHuman())
 		{
-			// JdH => calculate ai to human trade priority for multiplayer
 			DoUpdateHumanTradePriority(ePlayer, GC.getOPINION_THRESHOLD_ALLY());
 		}
-#endif
+		return;
 	}
-	// Always at war?
-	else if (IsAlwaysAtWar(ePlayer))
-	{
+
+	int iOpinionWeight = GetCivOpinionWeight(ePlayer);
+	SetCachedOpinionWeight(ePlayer, iOpinionWeight);
+
+	CivOpinionTypes eOpinion = CIV_OPINION_ALLY;
+	if (iOpinionWeight >= /*160*/ GC.getOPINION_THRESHOLD_UNFORGIVABLE())
 		eOpinion = CIV_OPINION_UNFORGIVABLE;
-		SetCachedOpinionWeight(ePlayer, SHRT_MAX);
-	}
-	// Different teams
-	else
+	else if (iOpinionWeight >= /*80*/ GC.getOPINION_THRESHOLD_ENEMY())
+		eOpinion = CIV_OPINION_ENEMY;
+	else if (iOpinionWeight >= /*30*/ GC.getOPINION_THRESHOLD_COMPETITOR())
+		eOpinion = CIV_OPINION_COMPETITOR;
+	else if (iOpinionWeight > /*-30*/ GC.getOPINION_THRESHOLD_FAVORABLE())
+		eOpinion = CIV_OPINION_NEUTRAL;
+	else if (iOpinionWeight > /*-80*/ GC.getOPINION_THRESHOLD_FRIEND())
+		eOpinion = CIV_OPINION_FAVORABLE;
+	else if (iOpinionWeight > /*-160*/ GC.getOPINION_THRESHOLD_ALLY())
+		eOpinion = CIV_OPINION_FRIEND;
+
+	// JdH => calculate ai to human trade priority for multiplayer
+	if (MOD_ACTIVE_DIPLOMACY && GC.getGame().isReallyNetworkMultiPlayer())
 	{
-		// Human shadow AI skips the normal code
-		if (GetPlayer()->isHuman())
-		{
-			if (IsAtWar(ePlayer) || IsDenouncedPlayer(ePlayer))
-				SetCivOpinion(ePlayer, CIV_OPINION_ENEMY);
-			else if (IsDoFAccepted(ePlayer) || IsHasDefensivePact(ePlayer))
-				SetCivOpinion(ePlayer, CIV_OPINION_FRIEND);
-			else
-				SetCivOpinion(ePlayer, CIV_OPINION_NEUTRAL);
-
-			return;
-		}
-
-		int iOpinionWeight = GetCivOpinionWeight(ePlayer);
-		SetCachedOpinionWeight(ePlayer, iOpinionWeight);
-
-		if (iOpinionWeight >= /*160*/ GC.getOPINION_THRESHOLD_UNFORGIVABLE())
-			eOpinion = CIV_OPINION_UNFORGIVABLE;
-		else if (iOpinionWeight >= /*80*/ GC.getOPINION_THRESHOLD_ENEMY())
-			eOpinion = CIV_OPINION_ENEMY;
-		else if (iOpinionWeight >= /*30*/ GC.getOPINION_THRESHOLD_COMPETITOR())
-			eOpinion = CIV_OPINION_COMPETITOR;
-		else if (iOpinionWeight > /*-30*/ GC.getOPINION_THRESHOLD_FAVORABLE())
-			eOpinion = CIV_OPINION_NEUTRAL;
-		else if (iOpinionWeight > /*-80*/ GC.getOPINION_THRESHOLD_FRIEND())
-			eOpinion = CIV_OPINION_FAVORABLE;
-		else if (iOpinionWeight > /*-160*/ GC.getOPINION_THRESHOLD_ALLY())
-			eOpinion = CIV_OPINION_FRIEND;
-		else
-			eOpinion = CIV_OPINION_ALLY;
-
-#if defined(MOD_ACTIVE_DIPLOMACY)
-		if (GC.getGame().isReallyNetworkMultiPlayer() && MOD_ACTIVE_DIPLOMACY)
-		{
-			// JdH => calculate ai to human trade priority for multiplayer
-			DoUpdateHumanTradePriority(ePlayer, iOpinionWeight);
-		}
-#endif
+		DoUpdateHumanTradePriority(ePlayer, iOpinionWeight);
 	}
 
 	// Finally, set the Opinion
@@ -12578,9 +12570,6 @@ void CvDiplomacyAI::DoUpdateOnePlayerOpinion(PlayerTypes ePlayer)
 /// What is the number value of our opinion towards ePlayer?
 int CvDiplomacyAI::GetCivOpinionWeight(PlayerTypes ePlayer)
 {
-	if (!GET_PLAYER(ePlayer).isAlive() || !GET_PLAYER(ePlayer).isMajorCiv() || GET_PLAYER(ePlayer).getNumCities() <= 0)
-		return 0;
-
 	int iOpinionWeight = GetBaseOpinionScore(ePlayer);
 
 	//////////////////////////////////////

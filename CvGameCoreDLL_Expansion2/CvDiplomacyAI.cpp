@@ -12821,7 +12821,7 @@ void CvDiplomacyAI::DoUpdateGlobalPolitics()
 }
 
 /// Reevaluate our general Diplomatic Approach towards specified players
-void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, bool bFromWar, bool bCancelExchanges)
+void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, bool bFromWar, bool bCancelExchanges, bool bFromResurrection)
 {
 	if (!GetPlayer()->isMajorCiv())
 		return;
@@ -12837,6 +12837,9 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 		return;
 
 	DoTestUntrustworthyFriends();
+
+	if (bFromResurrection)
+		DoUpdateOpinions();
 
 	// War declaration/major event? We have a lot more reevaluating to do.
 	if (bFromWar)
@@ -12860,8 +12863,10 @@ void CvDiplomacyAI::DoReevaluatePlayers(vector<PlayerTypes>& vTargetPlayers, boo
 	{
 		if (GET_PLAYER(*it).isAlive() && IsHasMet(*it) && GET_PLAYER(*it).isMajorCiv())
 		{
-			DoUpdateOnePlayerOpinion(*it);
 			vPlayersToReevaluate.push_back(*it);
+
+			if (!bFromResurrection)
+				DoUpdateOnePlayerOpinion(*it);
 
 			// Reevaluate our exchange desires with this player next turn!
 			if (bCancelExchanges)

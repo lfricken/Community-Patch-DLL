@@ -45418,8 +45418,8 @@ int CvDiplomacyAI::GetTooManyVassalsScore(PlayerTypes ePlayer) const
 	int iOpinionWeight = 0;
 	int iNumVassals = 0;
 
-	// Vassals, friends and teammates aren't too concerned
-	if (IsVassal(ePlayer) || IsDoFAccepted(ePlayer) || IsTeammate(ePlayer))
+	// Vassals and friends aren't too concerned
+	if (IsVassal(ePlayer) || IsDoFAccepted(ePlayer))
 	{
 		return 0;
 	}

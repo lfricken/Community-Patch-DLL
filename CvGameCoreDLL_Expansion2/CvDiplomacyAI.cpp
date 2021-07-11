@@ -45424,17 +45424,15 @@ int CvDiplomacyAI::GetTooManyVassalsScore(PlayerTypes ePlayer) const
 		return 0;
 	}
 
-	// Each vassal contributes +20 to score (each player on a team counts as 1 vassal)
+	// Each vassal that we have met contributes +20 to score (each player on a team counts as 1 vassal)
 	for (int iI = 0; iI < MAX_MAJOR_CIVS; iI++)
 	{
-		// Only civs we have met
-		if (GET_TEAM(GetTeam()).isHasMet(GET_PLAYER((PlayerTypes)iI).getTeam()))
+		PlayerTypes eLoopPlayer = (PlayerTypes) iI;
+
+		if (IsHasMet(eLoopPlayer) && GET_PLAYER(eLoopPlayer).GetDiplomacyAI()->IsVassal(ePlayer))
 		{
-			if (GET_TEAM(GET_PLAYER((PlayerTypes)iI).getTeam()).IsVassal(GET_PLAYER(ePlayer).getTeam()))
-			{
-				iOpinionWeight += /*20*/ GC.getOPINION_WEIGHT_VASSALAGE_TOO_MANY_VASSALS();
-				iNumVassals++;
-			}
+			iOpinionWeight += /*20*/ GC.getOPINION_WEIGHT_VASSALAGE_TOO_MANY_VASSALS();
+			iNumVassals++;
 		}
 	}
 

@@ -1969,7 +1969,7 @@ CivOpinionTypes CvDiplomacyAI::GetCivOpinion(PlayerTypes ePlayer) const
 
 void CvDiplomacyAI::SetCivOpinion(PlayerTypes ePlayer, CivOpinionTypes eOpinion)
 {
-	if (ePlayer < 0 || ePlayer >= MAX_MAJOR_CIVS) return;
+	if (ePlayer < 0 || ePlayer >= MAX_MAJOR_CIVS || GetTeam() == GET_PLAYER(ePlayer).getTeam() || IsAlwaysAtWar(ePlayer)) return;
 	if (eOpinion < 0 || eOpinion >= NUM_CIV_OPINIONS) return;
 	m_aeCivOpinion[ePlayer] = eOpinion;
 }

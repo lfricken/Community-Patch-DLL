@@ -12751,6 +12751,8 @@ int CvDiplomacyAI::GetCivOpinionWeight(PlayerTypes ePlayer)
 	{
 		iOpinionWeight += GetVassalScore(ePlayer);
 		iOpinionWeight += GetVassalTreatedScore(ePlayer);
+		iOpinionWeight += GetVassalProtectScore(ePlayer);
+		iOpinionWeight += GetVassalFailedProtectScore(ePlayer);
 		iOpinionWeight += GetMasterScore(ePlayer);
 		iOpinionWeight += GetTooManyVassalsScore(ePlayer);
 		iOpinionWeight += GetSameMasterScore(ePlayer);

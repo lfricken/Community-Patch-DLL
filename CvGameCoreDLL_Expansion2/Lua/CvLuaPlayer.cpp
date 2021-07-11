@@ -13950,16 +13950,13 @@ int CvLuaPlayer::lGetOpinionTable(lua_State* L)
 			}
 
 			// Vassal protect VS. failed protect
-			if (pDiplo->GetVassalProtectScore(ePlayer) != pDiplo->GetVassalFailedProtectScore(ePlayer))
+			if (pDiplo->GetVassalProtectScore(ePlayer) != (pDiplo->GetVassalFailedProtectScore(ePlayer) * -1))
 			{
 				iValue = pDiplo->GetVassalProtectScore(ePlayer) + pDiplo->GetVassalFailedProtectScore(ePlayer);
-				if (iValue != 0)
-				{
-					Opinion kOpinion;
-					kOpinion.m_iValue = iValue;
-					kOpinion.m_str = (iValue > 0) ? Localization::Lookup("TXT_KEY_DIPLO_VASSAL_FAILED_PROTECT") : Localization::Lookup("TXT_KEY_DIPLO_VASSAL_PROTECT");
-					aOpinions.push_back(kOpinion);
-				}
+				Opinion kOpinion;
+				kOpinion.m_iValue = iValue;
+				kOpinion.m_str = (iValue > 0) ? Localization::Lookup("TXT_KEY_DIPLO_VASSAL_FAILED_PROTECT") : Localization::Lookup("TXT_KEY_DIPLO_VASSAL_PROTECT");
+				aOpinions.push_back(kOpinion);
 			}
 
 			iValue = pDiplo->GetBrokenVassalAgreementScore(ePlayer);

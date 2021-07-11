@@ -13750,6 +13750,10 @@ int CvLuaPlayer::lGetOpinionTable(lua_State* L)
 		{
 			Opinion kOpinion;
 			kOpinion.m_iValue = pDiplo->GetPolicyScore(ePlayer);
+
+			if (bHideNegatives && iValue < 0)
+				kOpinion.m_iValue = 0;
+
 			kOpinion.m_str = (iValue > 0) ? Localization::Lookup("TXT_KEY_DIPLO_SAME_POLICIES") : Localization::Lookup("TXT_KEY_DIPLO_DIFFERENT_POLICIES");
 			aOpinions.push_back(kOpinion);
 		}
@@ -13784,11 +13788,8 @@ int CvLuaPlayer::lGetOpinionTable(lua_State* L)
 		}
 		else if (pDiplo->IsPlayerOpposingReligion(ePlayer))
 		{
-			if (bHideNegatives)
-				iValue = 0;
-
 			Opinion kOpinion;
-			kOpinion.m_iValue = iValue;
+			kOpinion.m_iValue = bHideNegatives ? 0 : iValue;
 			kOpinion.m_str = (iValue > 0) ? Localization::Lookup("TXT_KEY_DIPLO_RELIGIOUS_DIFFERENCES") : Localization::Lookup("TXT_KEY_DIPLO_RELIGIOUS_DIFFERENCES_NEUTRAL");
 			aOpinions.push_back(kOpinion);
 		}

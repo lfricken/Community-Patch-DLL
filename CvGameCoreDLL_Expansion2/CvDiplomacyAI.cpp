@@ -42722,7 +42722,7 @@ int CvDiplomacyAI::GetMinorCivDisputeLevelScore(PlayerTypes ePlayer)
 
 int CvDiplomacyAI::GetTechBlockLevelScore(PlayerTypes ePlayer)
 {
-	if (!IsScientist())
+	if (!IsScientist() || GC.getGame().isOption(GAMEOPTION_NO_SCIENCE))
 		return 0;
 
 	int iOpinionWeight = 0;
@@ -42785,7 +42785,7 @@ int CvDiplomacyAI::GetTechBlockLevelScore(PlayerTypes ePlayer)
 
 int CvDiplomacyAI::GetPolicyBlockLevelScore(PlayerTypes ePlayer)
 {
-	if (!IsCultural())
+	if (!IsCultural() || GC.getGame().isOption(GAMEOPTION_NO_POLICIES))
 		return 0;
 
 	int iOpinionWeight = 0;
@@ -45407,7 +45407,7 @@ int CvDiplomacyAI::GetMasterScore(PlayerTypes ePlayer) const
 
 	if (IsMaster(ePlayer))
 	{
-		iOpinionWeight += /*-20*/ GC.getOPINION_WEIGHT_VASSALAGE_WE_ARE_MASTER();
+		iOpinionWeight += /*-40*/ GC.getOPINION_WEIGHT_VASSALAGE_WE_ARE_MASTER();
 	}
 
 	return iOpinionWeight;
@@ -45498,7 +45498,7 @@ int CvDiplomacyAI::GetBrokenVassalAgreementScore(PlayerTypes ePlayer) const
 	// No scaling for backstabbing penalties!
 	if (IsPlayerBrokenVassalAgreement(ePlayer))
 	{
-		iOpinionWeight += /*40*/ GC.getOPINION_WEIGHT_VASSALAGE_BROKEN_VASSAL_AGREEMENT_OPINION_WEIGHT();
+		iOpinionWeight += /*100*/ GC.getOPINION_WEIGHT_VASSALAGE_BROKEN_VASSAL_AGREEMENT_OPINION_WEIGHT();
 	}
 
 	return iOpinionWeight;

@@ -12408,7 +12408,7 @@ bool CvDiplomacyAI::IsWillingToAttackFriend(PlayerTypes ePlayer, bool bDirect, b
 
 		if (!bDirect)
 		{
-			bGoodReason |= IsGoingForWorldConquest() && GET_PLAYER(ePlayer).GetCapitalConqueror() == NO_PLAYER;
+			bGoodReason |= IsGoingForWorldConquest() && (GET_PLAYER(ePlayer).GetCapitalConqueror() == NO_PLAYER || GET_PLAYER(ePlayer).GetNumCapitalCities() > 0);
 			bGoodReason |= IsMajorCompetitor(ePlayer);
 		}
 

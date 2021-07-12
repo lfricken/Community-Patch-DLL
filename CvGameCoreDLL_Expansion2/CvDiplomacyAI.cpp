@@ -12401,7 +12401,7 @@ bool CvDiplomacyAI::IsWillingToAttackFriend(PlayerTypes ePlayer, bool bDirect, b
 		bool bGoodReason = IsBackstabber(); // if we've already backstabbed one friend, more willing to backstab others
 		bGoodReason |= bEndgameAggressive;
 		bGoodReason |= bUntrustworthy;
-		bGoodReason |= IsCloseToDominationVictory() && GET_PLAYER(ePlayer).GetCapitalConqueror() == NO_PLAYER;
+		bGoodReason |= IsCloseToDominationVictory() && (GET_PLAYER(ePlayer).GetCapitalConqueror() == NO_PLAYER || GET_PLAYER(ePlayer).GetNumCapitalCities() > 0);
 		bGoodReason |= GET_PLAYER(ePlayer).GetDiplomacyAI()->GetWeDeclaredWarOnFriendCount() > 0; // they also backstabbed people
 		bGoodReason |= GetBiggestCompetitor() == ePlayer;
 		bGoodReason |= GetWarmongerThreat(ePlayer) >= THREAT_SEVERE;
